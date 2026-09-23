@@ -3,10 +3,10 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 
 // Removes an employee's portal login (auth user + user_profiles row).
 //
-// Source was previously only in the deployed project. The deployed version
-// (v1) checks that the caller is signed in but not that they are an admin, so
-// any employee could delete any other user's login. This version adds the same
-// admin/super_admin guard invite-employee uses. NOT YET DEPLOYED: deploy with
+// Only admins and super admins may call it. Version 1 of this function checked
+// that the caller was signed in but not their role, so any employee could
+// delete another user's login; the role guard (matching invite-employee) was
+// deployed on 2026-09-23. Deploy changes with
 // `supabase functions deploy delete-user` (verify_jwt stays on).
 Deno.serve(async (req: Request) => {
   const corsHeaders = {

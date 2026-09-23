@@ -1,4 +1,5 @@
--- NOT YET APPLIED to the ISL-onboarding project. Review, then apply.
+-- Mirrors migration 20260923183030 fix_business_days_start_date, applied to the
+-- ISL-onboarding project on 2026-09-23.
 --
 -- calculate_business_days() started its series at p_start + 1 day, so the
 -- first day of every request was never counted. Verified on the live project
@@ -26,10 +27,11 @@ AS $function$
              and extract(day from h.date) = extract(day from d)))
 $function$;
 
--- Optional backfill (review before running): recompute stored days for
--- full-day requests that haven't been approved yet. Approved requests have
--- already been added to used_days, so correct those balances deliberately
--- rather than in bulk.
+-- Backfill was not needed when this was applied: the only full-day request on
+-- record (Jun 22-26, stored as 4 days) is cancelled, so no balance used the
+-- wrong count. If you ever need it, this recomputes pending requests only.
+-- Approved requests have already been added to used_days, so correct those
+-- balances deliberately rather than in bulk.
 --
 -- UPDATE public.time_off_requests
 --    SET business_days = public.calculate_business_days(start_date, end_date)
