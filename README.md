@@ -167,7 +167,7 @@ The app will be available at `http://localhost:3000`.
 
 ### Supabase Edge Functions
 
-The app calls five edge functions. Only `invite-employee`, `send-email` and `delete-user` have source in `supabase/functions/`; `invite-user` and `backup-database` exist only in the deployed project and should be pulled into the repo so they're reviewed and versioned like everything else.
+The app calls five edge functions. Only `invite-employee`, `send-email` and `delete-user` have source in `supabase/functions/` (`delete-user` v2, with the admin role check, was deployed on 2026-09-23); `invite-user` and `backup-database` exist only in the deployed project and should be pulled into the repo so they're reviewed and versioned like everything else.
 
 ### Building for Production
 
