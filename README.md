@@ -111,20 +111,29 @@ src/
 │   ├── SuperAdmin.js       # User management, audit log, system settings
 │   └── SetPassword.js      # Invite-based initial password setup
 ├── components/
-│   ├── Layout.js           # Sidebar and navigation (desktop + mobile)
+│   ├── Layout.js           # Sidebar and navigation (desktop + mobile), built from one list
 │   ├── Toast.js            # Success/error/warning notifications
-│   ├── ConfirmModal.js     # Accessible confirmation dialogs
+│   ├── ConfirmModal.js     # Confirmation dialogs (built on ui/Modal)
 │   ├── EditEmployeeModal.js # Edit employee details and role mid-onboarding
 │   └── Skeleton.js         # Loading placeholder screens
+├── ui/                     # Shared, theme-aware building blocks — use these, not inline copies
+│   ├── theme.js            # Design tokens (T.*) mapped to the CSS variables in index.css
+│   ├── PageHeader.js       # Title, subtitle, actions and tabs for every page
+│   ├── Button.js           # primary / secondary / ghost / danger / danger-outline / link
+│   ├── Modal.js            # Dialog with focus trap, focus return, Escape and scroll lock
+│   ├── Field.js            # Label + control + hint/error, wired for screen readers
+│   ├── Tabs.js, Segmented.js, Menu.js, CheckCircle.js, FileButton.js, SearchInput.js, EmptyState.js
 ├── hooks/
 │   ├── useToast.js         # Toast state management
+│   ├── useTheme.js         # Light / dark / system theme
 │   └── useWindowSize.js    # Responsive breakpoint detection (mobile < 768px)
 ├── utils/
+│   ├── dates.js            # Date-only values parsed in local time (see "Dates" below)
 │   ├── auditLog.js         # Audit log writer
 │   ├── getHrEmail.js       # Cached system settings fetcher
 │   └── handleError.js      # Sanitizes Supabase errors for user display
-├── App.js                  # Root component — auth, routing, role enforcement
-├── config.js               # Route definitions
+├── App.js                  # Root component — auth, routing, role enforcement, code-split pages
+├── config.js               # Routes, schedule buckets, and the three agencies (BRANDS)
 ├── supabaseClient.js       # Supabase client initialization
 └── index.css               # Global styles and CSS design tokens
 ```
@@ -156,11 +165,17 @@ npm start
 
 The app will be available at `http://localhost:3000`.
 
+### Supabase Edge Functions
+
+The app calls five edge functions. Only `invite-employee`, `send-email` and `delete-user` have source in `supabase/functions/`; `invite-user` and `backup-database` exist only in the deployed project and should be pulled into the repo so they're reviewed and versioned like everything else.
+
 ### Building for Production
 
 ```bash
 npm run build
 ```
+
+Pages are code-split, so the sign-in screen loads only what it needs; the rest is preloaded in the background after sign-in.
 
 Serve the `build/` folder with any static host, or use the included `serve` package:
 
@@ -179,18 +194,22 @@ npm run test:watch # watch mode
 
 ## Design System
 
-The UI is built on a set of CSS custom properties defined in `index.css`. Key tokens:
+The UI is built on CSS custom properties defined in `index.css`, each with a light and a dark value. Components read them through `T` in `src/ui/theme.js`. **Don't hard-code colours in components**: a hex value that looks right in light mode is usually unreadable in dark mode. Add or reuse a token instead. Key tokens:
 
-| Token | Value | Use |
+| Token | Light | Use |
 |---|---|---|
-| `--brand` | `#0066cc` | Primary actions, links |
-| `--bg` | `#f4f3ef` | Page background |
-| `--surface` | `#ffffff` | Cards and panels |
-| `--border` | `#e2e1dd` | Dividers and outlines |
-| `--success` | `#1a7a4a` | Confirmations |
-| `--warning` | `#d4901a` | Cautions |
-| `--danger` | `#c04040` | Destructive actions |
+| `--brand` | `#0066cc` | Links, focus, progress, selected state |
+| `--bg` / `--surface` | `#ffffff` | Page background / cards and panels |
+| `--surface-sunken` | `#fafaf9` | Table headers, weekends, inset panels |
+| `--border` / `--border-subtle` | `#e2e1dd` / `#eceae6` | Outlines / row dividers |
+| `--text` / `--muted` / `--subtle` | `#18181b` / `#70706b` / `#a4a39f` | Text hierarchy |
+| `--success`, `--warning`, `--danger` (+ `-bg`, `-border`) | green / amber / red | Status pills, banners, destructive actions |
+| `--btn-primary-bg` / `--btn-primary-fg` | near-black / white | Primary buttons (both themes) |
 
 Typography uses Inter at weights 400–700 with tight letter-spacing for a clean, professional feel.
+
+### Dates
+
+Postgres `date` columns (start dates, time-off dates) arrive as `"YYYY-MM-DD"` strings. `new Date("2026-09-21")` reads that as midnight UTC, which in Atlantic time is the evening of the 20th, so it displays a day early. Always format them with `formatDate()` from `src/utils/dates.js`, and use `getToday()` from `config.js` for "today". The test suite runs in `America/Halifax` so this class of bug fails CI.
 
 The layout is fully responsive. On desktop, a 240px fixed sidebar handles navigation. On mobile (below 768px), the sidebar becomes a bottom tab bar with a slide-up drawer. All transitions respect `prefers-reduced-motion`.

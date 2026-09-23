@@ -39,8 +39,11 @@ export function useDashboard(refreshKey) {
     if (error) {
       setFetchError(handleSupabaseError(error, 'Failed to load onboardings.'))
     } else {
-      setOnboardings(data || [])
-      fetchDocStats(data || [])
+      // A row whose employee isn't readable (row-level security, or a deleted
+      // record) would crash every o.employees.* access below; skip it.
+      const rows = (data || []).filter(o => o.employees)
+      setOnboardings(rows)
+      fetchDocStats(rows)
     }
     setLoading(false)
   }

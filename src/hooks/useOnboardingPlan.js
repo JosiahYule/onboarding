@@ -7,6 +7,8 @@ import { getHrEmail } from '../utils/getHrEmail'
 import { normalizeTask, sortTasks } from '../utils/schedule'
 import { attachResolvedUrls } from '../utils/documentUrls'
 import { escapeHtml } from '../utils/escapeHtml'
+import { formatDate } from '../utils/dates'
+import { safeFileName } from '../utils/files'
 
 export function useOnboardingPlan({ instanceId, onBack }) {
   const [instance, setInstance] = useState(null)
@@ -36,7 +38,7 @@ export function useOnboardingPlan({ instanceId, onBack }) {
       .from('onboarding_instances')
       .select(`
         id, status,
-        employees (id, full_name, email, hire_date, role_id, roles (name)),
+        employees (id, full_name, email, hire_date, role_id, manager_id, brand, roles (name)),
         task_completions (
           id, completed, completed_at, notes, day, sort_order, custom_task_name, custom_owner,
           onboarding_templates (id, task_name, phase, owner, parent_id)
@@ -104,8 +106,12 @@ export function useOnboardingPlan({ instanceId, onBack }) {
     const pendingSaves = pendingNoteSaves.current
     return () => {
       Object.values(timers).forEach(clearTimeout)
+      // Supabase queries are lazy: nothing is sent until the builder is
+      // awaited or .then()'d. Without the .then() these saves never left the
+      // browser, so a note typed just before navigating away was lost.
       Object.entries(pendingSaves).forEach(([id, value]) => {
         supabase.from('task_completions').update({ notes: value }).eq('id', id)
+          .then(({ error }) => { if (error) console.error('Failed to save note on exit:', error) })
       })
     }
   }, [])
@@ -212,7 +218,7 @@ export function useOnboardingPlan({ instanceId, onBack }) {
       return
     }
     setTasks(prev => prev.map(t => t.id === taskId
-      ? { ...t, name: trimmed, owner: owner || t.owner }
+      ? { ...t, name: trimmed, owner: owner || null }
       : t))
     showToast('Task updated')
   }
@@ -280,16 +286,21 @@ export function useOnboardingPlan({ instanceId, onBack }) {
     if (existing) {
       const newVal = !existing.signed
       setDocCompletions(prev => ({ ...prev, [docId]: { ...existing, signed: newVal } }))
-      await supabase
+      const { error } = await supabase
         .from('document_completions')
         .update({ signed: newVal, completed_at: newVal ? new Date().toISOString() : null })
         .eq('id', existing.id)
+      if (error) {
+        setDocCompletions(prev => ({ ...prev, [docId]: existing }))
+        showToast(handleSupabaseError(error, 'Failed to update document. Please try again.'), 'error')
+      }
     } else {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('document_completions')
         .insert({ employee_id: employeeId, document_id: docId, signed: true, received: true, completed_at: new Date().toISOString() })
         .select().single()
-      if (data) setDocCompletions(prev => ({ ...prev, [docId]: data }))
+      if (error) showToast(handleSupabaseError(error, 'Failed to update document. Please try again.'), 'error')
+      else if (data) setDocCompletions(prev => ({ ...prev, [docId]: data }))
     }
   }
 
@@ -304,13 +315,15 @@ export function useOnboardingPlan({ instanceId, onBack }) {
         const employeeId = instance.employees.id
         const existing = docCompletions[docId]
         if (existing) {
-          await supabase.from('document_completions').update({ hidden: true }).eq('id', existing.id)
+          const { error } = await supabase.from('document_completions').update({ hidden: true }).eq('id', existing.id)
+          if (error) { showToast(handleSupabaseError(error, 'Failed to hide document.'), 'error'); setModal(null); return }
           setDocCompletions(prev => ({ ...prev, [docId]: { ...existing, hidden: true } }))
         } else {
-          const { data } = await supabase
+          const { data, error } = await supabase
             .from('document_completions')
             .insert({ employee_id: employeeId, document_id: docId, hidden: true, signed: false, received: false })
             .select().single()
+          if (error) { showToast(handleSupabaseError(error, 'Failed to hide document.'), 'error'); setModal(null); return }
           if (data) setDocCompletions(prev => ({ ...prev, [docId]: data }))
         }
         await logAudit('document_hidden', 'document', docId, { employee_name: instance.employees.full_name })
@@ -323,7 +336,8 @@ export function useOnboardingPlan({ instanceId, onBack }) {
   async function restoreDocument(docId) {
     const existing = docCompletions[docId]
     if (existing) {
-      await supabase.from('document_completions').update({ hidden: false }).eq('id', existing.id)
+      const { error } = await supabase.from('document_completions').update({ hidden: false }).eq('id', existing.id)
+      if (error) { showToast(handleSupabaseError(error, 'Failed to restore document.'), 'error'); return }
       setDocCompletions(prev => ({ ...prev, [docId]: { ...existing, hidden: false } }))
       await logAudit('document_restored', 'document', docId, { employee_name: instance.employees.full_name })
       showToast('Document restored')
@@ -334,7 +348,7 @@ export function useOnboardingPlan({ instanceId, onBack }) {
     const file = e.target.files[0]
     if (!file) return
     setUploading(true)
-    const filePath = `documents/${Date.now()}_${file.name}`
+    const filePath = `documents/${Date.now()}_${safeFileName(file.name)}`
     const { error: uploadError } = await supabase.storage.from('documents').upload(filePath, file)
     if (uploadError) {
       showToast(handleSupabaseError(uploadError, 'Upload failed. Please try again.'), 'error')
@@ -347,10 +361,11 @@ export function useOnboardingPlan({ instanceId, onBack }) {
       showToast(handleSupabaseError(insertError, 'Failed to save document.'), 'error')
       await supabase.storage.from('documents').remove([filePath])
     } else {
-      showToast('Document uploaded')
+      showToast('Uploaded and added to every employee\'s documents')
       await fetchDocuments()
     }
     setUploading(false)
+    e.target.value = ''
   }
 
   const parentTasks = tasks.filter(t => !t.parentId)
@@ -385,10 +400,11 @@ export function useOnboardingPlan({ instanceId, onBack }) {
       confirmLabel: 'Mark complete',
       confirmDanger: false,
       onConfirm: async () => {
-        await supabase.from('onboarding_instances').update({ status: 'completed' }).eq('id', instanceId)
+        const { error } = await supabase.from('onboarding_instances').update({ status: 'completed' }).eq('id', instanceId)
+        if (error) { showToast(handleSupabaseError(error, 'Failed to mark as complete.'), 'error'); setModal(null); return }
         await logAudit('onboarding_completed', 'onboarding_instance', instanceId, { employee_name: instance.employees.full_name })
         const hrEmail = await getHrEmail()
-        if (hrEmail) await supabase.functions.invoke('send-email', {
+        if (hrEmail) supabase.functions.invoke('send-email', {
           body: {
             to: hrEmail,
             subject: `Onboarding complete: ${instance.employees.full_name}`,
@@ -398,15 +414,15 @@ export function useOnboardingPlan({ instanceId, onBack }) {
                 <p style="font-size: 14px; color: #444; line-height: 1.6;"><strong>${escapeHtml(instance.employees.full_name)}</strong> has completed their onboarding plan.</p>
                 <table style="font-size: 14px; color: #444; margin-top: 16px;">
                   <tr><td style="padding: 4px 16px 4px 0; color: #888;">Role</td><td>${escapeHtml(instance.employees.roles?.name || 'N/A')}</td></tr>
-                  <tr><td style="padding: 4px 16px 4px 0; color: #888;">Started</td><td>${new Date(instance.employees.hire_date).toLocaleDateString('en-CA', { month: 'long', day: 'numeric', year: 'numeric' })}</td></tr>
-                  <tr><td style="padding: 4px 16px 4px 0; color: #888;">Completed</td><td>${new Date().toLocaleDateString('en-CA', { month: 'long', day: 'numeric', year: 'numeric' })}</td></tr>
+                  <tr><td style="padding: 4px 16px 4px 0; color: #888;">Started</td><td>${formatDate(instance.employees.hire_date)}</td></tr>
+                  <tr><td style="padding: 4px 16px 4px 0; color: #888;">Completed</td><td>${formatDate(new Date())}</td></tr>
                   <tr><td style="padding: 4px 16px 4px 0; color: #888;">Tasks completed</td><td>${completedTasksCount()} of ${totalTasks()}</td></tr>
                 </table>
                 <p style="font-size: 13px; color: #888; margin-top: 32px;">Sent by Integrated Launch</p>
               </div>
             `
           }
-        })
+        }).then(({ error: emailError }) => { if (emailError) console.error('Completion email failed:', emailError) })
         setModal(null)
         onBack()
       }
@@ -420,7 +436,8 @@ export function useOnboardingPlan({ instanceId, onBack }) {
       confirmLabel: 'Archive',
       confirmDanger: true,
       onConfirm: async () => {
-        await supabase.from('onboarding_instances').update({ status: 'archived' }).eq('id', instanceId)
+        const { error } = await supabase.from('onboarding_instances').update({ status: 'archived' }).eq('id', instanceId)
+        if (error) { showToast(handleSupabaseError(error, 'Failed to archive onboarding.'), 'error'); setModal(null); return }
         await logAudit('onboarding_archived', 'onboarding_instance', instanceId, { employee_name: instance.employees.full_name })
         setModal(null)
         onBack()
@@ -435,10 +452,19 @@ export function useOnboardingPlan({ instanceId, onBack }) {
       confirmLabel: 'Delete permanently',
       confirmDanger: true,
       onConfirm: async () => {
+        const fail = (error, message) => {
+          showToast(handleSupabaseError(error, message), 'error')
+          setModal(null)
+        }
+        // Portal login first: if that can't be removed, stop before deleting
+        // the records it points at, rather than leaving an orphaned login.
+        const { data: fnData, error: fnError } = await supabase.functions.invoke('delete-user', { body: { employeeId: instance.employees.id } })
+        if (fnError || fnData?.error) return fail(fnError || { message: fnData.error }, 'Could not remove their portal access, so nothing was deleted.')
+        const { error: instError } = await supabase.from('onboarding_instances').delete().eq('id', instanceId)
+        if (instError) return fail(instError, 'Failed to delete the onboarding plan.')
+        const { error: empError } = await supabase.from('employees').delete().eq('id', instance.employees.id)
+        if (empError) return fail(empError, 'The onboarding plan was deleted, but the employee record could not be.')
         await logAudit('employee_deleted', 'employee', instance.employees.id, { employee_name: instance.employees.full_name })
-        await supabase.functions.invoke('delete-user', { body: { employeeId: instance.employees.id } })
-        await supabase.from('onboarding_instances').delete().eq('id', instanceId)
-        await supabase.from('employees').delete().eq('id', instance.employees.id)
         setModal(null)
         onBack()
       }
@@ -452,7 +478,7 @@ export function useOnboardingPlan({ instanceId, onBack }) {
     }
     setInviting(true)
     const { data, error } = await supabase.functions.invoke('invite-employee', {
-      body: { email: instance.employees.email, employeeId: instance.employees.id, brand: instance.employees.roles?.brand || 'ISL' }
+      body: { email: instance.employees.email, employeeId: instance.employees.id, brand: instance.employees.brand || 'ISL' }
     })
     if (error || data?.error) {
       showToast(data?.error || 'Failed to send invite. Please try again.', 'error')

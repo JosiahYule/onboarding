@@ -5,10 +5,16 @@ import { handleSupabaseError } from '../utils/handleError'
 import { logAudit } from '../utils/auditLog'
 import { getHrEmail } from '../utils/getHrEmail'
 import { escapeHtml } from '../utils/escapeHtml'
-import { ONBOARDING_STATUS } from '../config'
+import { ONBOARDING_STATUS, brandInfo, brandName } from '../config'
 import { T } from '../ui/theme'
+import PageHeader from '../ui/PageHeader'
+import Field from '../ui/Field'
+import Button from '../ui/Button'
+import { useWindowSize } from '../hooks/useWindowSize'
+import { formatDate } from '../utils/dates'
 
-export default function NewOnboarding({ session, userProfile, roleId, roleName, onBack, onNavigate, onComplete }) {
+export default function NewOnboarding({ session, userProfile, roleId, roleName, roleBrand, onBack, onNavigate, onComplete }) {
+  const { isMobile } = useWindowSize()
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [hireDate, setHireDate] = useState('')
@@ -22,19 +28,9 @@ export default function NewOnboarding({ session, userProfile, roleId, roleName, 
   const dateError = touched.hireDate && !hireDate ? 'Please choose a start date.' : ''
   const markTouched = (field) => setTouched(t => ({ ...t, [field]: true }))
 
-  const styles = {
-    header: { padding: '28px 40px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `1px solid ${T.border}` },
-    title: { fontSize: '20px', fontWeight: 600, letterSpacing: '-0.4px' },
-    sub: { fontSize: '13px', color: T.muted, marginTop: '2px' },
-    content: { padding: '40px', maxWidth: '480px' },
-    label: { fontSize: '12px', color: T.muted, marginBottom: '6px', display: 'block' },
-    input: { width: '100%', background: T.surface, border: `1px solid ${T.border}`, borderRadius: '7px', padding: '10px 14px', fontSize: '13px', color: T.text, fontFamily: 'inherit', outline: 'none', marginBottom: '20px', display: 'block', boxSizing: 'border-box' },
-    btnPrimary: { background: T.text, color: '#fff', border: 'none', borderRadius: '7px', padding: '9px 18px', fontSize: '13px', fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' },
-    btnSecondary: { background: 'transparent', color: T.muted, border: `1px solid ${T.border}`, borderRadius: '7px', padding: '9px 18px', fontSize: '13px', fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', marginRight: '8px' },
-    error: { fontSize: '12px', color: T.danger, marginBottom: '16px' }
-  }
-
-async function handleCreate() {
+async function handleCreate(e) {
+  e?.preventDefault()
+  if (loading) return
   if (!fullName.trim() || !hireDate || !emailValid) {
     setTouched({ name: true, email: true, hireDate: true })
     setError('')
@@ -56,7 +52,7 @@ async function handleCreate() {
       emp.onboarding_instances?.some(inst => inst.status === ONBOARDING_STATUS.ACTIVE)
     )
     if (hasActive) {
-      setError(`An active onboarding already exists for someone named "${fullName}". Check the dashboard before continuing.`)
+      setError(`An active onboarding already exists for someone named “${fullName.trim()}”. Check the dashboard before creating another.`)
       setLoading(false)
       return
     }
@@ -64,7 +60,7 @@ async function handleCreate() {
 
   const { data, error: rpcError } = await supabase.rpc('create_onboarding', {
     p_full_name: fullName.trim(),
-    p_email: email,
+    p_email: email.trim(),
     p_role_id: roleId,
     p_hire_date: hireDate,
     p_brand: brand
@@ -76,7 +72,7 @@ if (rpcError) {
   return
 }
 
-  await sendOnboardingStartedEmails(fullName, email, roleName, hireDate)
+  await sendOnboardingStartedEmails(fullName.trim(), email.trim(), roleName, hireDate, brand)
   await logAudit('onboarding_created', 'onboarding_instance', data.instance_id, {
     employee_name: fullName.trim(),
     role: roleName
@@ -86,8 +82,10 @@ if (rpcError) {
   onComplete(data.instance_id)
 }
 
-async function sendOnboardingStartedEmails(name, employeeEmail, role, startDate) {
-  const startFormatted = new Date(startDate).toLocaleDateString('en-CA', { month: 'long', day: 'numeric', year: 'numeric' })
+async function sendOnboardingStartedEmails(name, employeeEmail, role, startDate, brandCode) {
+  // Each agency's hires should be welcomed by that agency, not always by ISL.
+  const agency = brandInfo(brandCode)
+  const startFormatted = formatDate(startDate)
   const firstName = escapeHtml(name.split(' ')[0])
   const safeName = escapeHtml(name)
   const safeRole = escapeHtml(role)
@@ -99,7 +97,7 @@ async function sendOnboardingStartedEmails(name, employeeEmail, role, startDate)
       await supabase.functions.invoke('send-email', {
         body: {
           to: employeeEmail,
-          subject: `Welcome to Integrated Staffing, ${name.split(' ')[0]}`,
+          subject: `Welcome to ${agency.name}, ${name.split(' ')[0]}`,
           html: `
             <div style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px 20px; color: #1a1a1a;">
               <h1 style="font-size: 22px; font-weight: 600; letter-spacing: -0.4px; margin-bottom: 16px;">Welcome aboard, ${firstName}</h1>
@@ -107,7 +105,7 @@ async function sendOnboardingStartedEmails(name, employeeEmail, role, startDate)
               <p style="font-size: 15px; line-height: 1.6; color: #444;">Our HR team has prepared your onboarding plan and will be in touch shortly with next steps, required paperwork, and training schedule.</p>
               <p style="font-size: 15px; line-height: 1.6; color: #444;">If you have any questions before your start date, please reach out.</p>
               <p style="font-size: 15px; line-height: 1.6; color: #444; margin-top: 32px;">Welcome to the team.</p>
-              <p style="font-size: 13px; color: #888; margin-top: 40px; border-top: 1px solid #eee; padding-top: 20px;">Integrated Staffing Limited</p>
+              <p style="font-size: 13px; color: #888; margin-top: 40px; border-top: 1px solid #eee; padding-top: 20px;">${escapeHtml(agency.signOff)}</p>
             </div>
           `
         }
@@ -139,39 +137,51 @@ async function sendOnboardingStartedEmails(name, employeeEmail, role, startDate)
   }
 }
 
+  const agency = brandName(roleBrand)
   return (
     <Layout session={session} userProfile={userProfile} currentPage="active" onNavigate={onNavigate}>
-      <div style={styles.header}>
-        <div>
-          <div style={styles.title}>New onboarding</div>
-          <div style={styles.sub}>Role: {roleName}</div>
+      <PageHeader
+        title="New onboarding"
+        subtitle="Their plan is built from the role’s task template."
+        back={{ label: 'Choose a different role', onClick: () => onNavigate('active') }}
+      />
+
+      <div style={{ padding: isMobile ? '20px 16px 40px' : '32px 40px 48px', maxWidth: '560px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', marginBottom: '24px', background: T.surfaceSunken, border: `1px solid ${T.borderSubtle}`, borderRadius: T.radiusMd }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: '11px', fontWeight: 600, color: T.subtle, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Role</div>
+            <div style={{ fontSize: '14px', fontWeight: 500, color: T.text, marginTop: '2px' }}>{roleName}{agency && <span style={{ color: T.muted, fontWeight: 400 }}> · {agency}</span>}</div>
+          </div>
+          <Button variant="link" size="sm" onClick={() => onNavigate('active')}>Change</Button>
         </div>
-      </div>
 
-      <div style={styles.content}>
-        {error && <div style={styles.error}>{error}</div>}
+        <form onSubmit={handleCreate} noValidate>
+          {error && (
+            <div role="alert" style={{ fontSize: '13px', color: T.danger, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: T.radiusMd, padding: '10px 12px', marginBottom: '18px', lineHeight: 1.5 }}>
+              {error}
+            </div>
+          )}
 
-        <span style={styles.label}>Full name</span>
-        <input className={nameError ? 'il-field-error' : ''} style={{ ...styles.input, marginBottom: nameError ? '6px' : '20px' }} type="text" placeholder="Jane Smith"
-          value={fullName} onChange={e => setFullName(e.target.value)} onBlur={() => markTouched('name')} />
-        {nameError && <div className="il-field-hint" data-tone="error" style={{ marginTop: 0, marginBottom: '20px' }}>{nameError}</div>}
+          <Field label="Full name" required error={nameError}>
+            <input type="text" placeholder="Jane Smith" autoComplete="off" autoFocus
+              value={fullName} onChange={e => setFullName(e.target.value)} onBlur={() => markTouched('name')} />
+          </Field>
 
-        <span style={styles.label}>Email address <span style={{ color: 'var(--subtle)', fontWeight: 400 }}>(optional)</span></span>
-        <input className={emailError ? 'il-field-error' : ''} style={{ ...styles.input, marginBottom: emailError ? '6px' : '20px' }} type="email" placeholder="jane@integratedstaffing.ca"
-          value={email} onChange={e => setEmail(e.target.value)} onBlur={() => markTouched('email')} />
-        {emailError && <div className="il-field-hint" data-tone="error" style={{ marginTop: 0, marginBottom: '20px' }}>{emailError}</div>}
+          <Field label="Email address" optional error={emailError}
+            hint={emailError ? null : 'We’ll send a welcome email here. You can invite them to the portal later.'}>
+            <input type="email" placeholder="jane@example.com" autoComplete="off" inputMode="email"
+              value={email} onChange={e => setEmail(e.target.value)} onBlur={() => markTouched('email')} />
+          </Field>
 
-        <span style={styles.label}>Start date</span>
-        <input className={dateError ? 'il-field-error' : ''} style={{ ...styles.input, marginBottom: dateError ? '6px' : '28px' }} type="date"
-          value={hireDate} onChange={e => setHireDate(e.target.value)} onBlur={() => markTouched('hireDate')} />
-        {dateError && <div className="il-field-hint" data-tone="error" style={{ marginTop: 0, marginBottom: '28px' }}>{dateError}</div>}
+          <Field label="Start date" required error={dateError}>
+            <input type="date" value={hireDate} onChange={e => setHireDate(e.target.value)} onBlur={() => markTouched('hireDate')} />
+          </Field>
 
-        <div style={{ display: 'flex' }}>
-          <button style={styles.btnSecondary} onClick={onBack}>Cancel</button>
-          <button style={styles.btnPrimary} onClick={handleCreate} disabled={loading}>
-            {loading ? 'Creating...' : 'Create onboarding plan'}
-          </button>
-        </div>
+          <div style={{ display: 'flex', gap: '8px', marginTop: '26px', flexWrap: 'wrap' }}>
+            <Button type="submit" busy={loading} busyLabel="Creating plan…">Create onboarding plan</Button>
+            <Button variant="secondary" onClick={onBack} disabled={loading}>Cancel</Button>
+          </div>
+        </form>
       </div>
     </Layout>
   )

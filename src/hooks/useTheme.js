@@ -35,12 +35,14 @@ export function useTheme() {
     } catch { /* ignore storage failures */ }
   }
 
+  // What's actually on screen, with 'system' resolved to the OS preference.
+  const isDark = theme === 'dark'
+    || (theme === 'system' && typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-color-scheme: dark)').matches)
+
   // Convenience toggle that flips between light and dark based on what's shown.
   function toggle() {
-    const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
-      || (theme === 'system' && window.matchMedia?.('(prefers-color-scheme: dark)').matches)
     setTheme(isDark ? 'light' : 'dark')
   }
 
-  return { theme, setTheme, toggle }
+  return { theme, isDark, setTheme, toggle }
 }

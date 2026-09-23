@@ -6,12 +6,15 @@ const supabaseAnonKey = env.REACT_APP_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIs
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
+// Resolves to the profile, or null when the user has no profile row. Throws on
+// a real failure (network, permissions) so the caller can offer a retry
+// instead of treating a blip as "account not set up".
 export async function getUserProfile(userId) {
   const { data, error } = await supabase
     .from('user_profiles')
     .select('*')
     .eq('id', userId)
-    .single()
-  if (error) return null
+    .maybeSingle()
+  if (error) throw error
   return data
 }

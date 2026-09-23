@@ -1,6 +1,24 @@
+import { toLocalISODate } from './utils/dates'
+
 export const BRAND = {
   name: 'Integrated Launch',
   company: 'Integrated Staffing Limited'
+}
+
+// The three sister agencies. `code` is what's stored in roles.brand and
+// employees.brand; `name` is what people should see; `signOff` closes emails.
+export const BRANDS = [
+  { code: 'ISL', name: 'Integrated Staffing', signOff: 'Integrated Staffing Limited' },
+  { code: 'AS', name: 'Accountant Staffing', signOff: 'Accountant Staffing' },
+  { code: 'ADS', name: 'Administrative Staffing', signOff: 'Administrative Staffing' },
+]
+export const BRAND_CODES = BRANDS.map(b => b.code)
+
+export function brandInfo(code) {
+  return BRANDS.find(b => b.code === code) || BRANDS[0]
+}
+export function brandName(code) {
+  return code ? (BRANDS.find(b => b.code === code)?.name || code) : ''
 }
 
 // The onboarding schedule. The first two weeks are broken into individual
@@ -26,9 +44,10 @@ export const BUCKET_SECTIONS = [
 export const PHASES = SCHEDULE_BUCKETS
 
 // Computed on call, not at module load, so a long-lived tab doesn't keep using
-// yesterday's date or last year after midnight / New Year.
+// yesterday's date or last year after midnight / New Year. Local, not UTC:
+// toISOString() would roll over to tomorrow at 8-9pm Atlantic time.
 export function getToday() {
-  return new Date().toISOString().slice(0, 10)
+  return toLocalISODate()
 }
 export function getCurrentYear() {
   return new Date().getFullYear()

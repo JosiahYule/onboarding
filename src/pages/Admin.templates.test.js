@@ -112,7 +112,7 @@ test('add-task field defaults to a free-text custom entry with library suggestio
   await openRole()
 
   // Open the Day 1 add form (first phase in the schedule).
-  fireEvent.click(screen.getAllByText('+ Add task')[0])
+  fireEvent.click(screen.getByRole('button', { name: 'Add a task to Day 1' }))
 
   // Typing works immediately — no dropdown to open, no "custom" option to find.
   const input = screen.getByPlaceholderText(/type a task name/i)

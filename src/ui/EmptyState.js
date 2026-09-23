@@ -15,7 +15,7 @@ export default function EmptyState({ icon, title, message, action, compact = fal
       {icon && (
         <div aria-hidden="true" style={{
           width: '44px', height: '44px', borderRadius: T.radiusLg,
-          background: T.bg, color: T.subtle,
+          background: T.hoverBg, color: T.muted,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           marginBottom: '8px',
         }}>
@@ -23,7 +23,7 @@ export default function EmptyState({ icon, title, message, action, compact = fal
         </div>
       )}
       {title && <div style={{ fontSize: '14px', fontWeight: 600, color: T.text }}>{title}</div>}
-      {message && <div style={{ fontSize: '13px', color: T.muted, lineHeight: 1.6, maxWidth: '320px' }}>{message}</div>}
+      {message && <div style={{ fontSize: '13px', color: T.muted, lineHeight: 1.6, maxWidth: '340px' }}>{message}</div>}
       {action && <div style={{ marginTop: '12px' }}>{action}</div>}
     </div>
   )
@@ -49,6 +49,21 @@ export const EmptyIcons = {
   people: (
     <svg width="20" height="20" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3">
       <circle cx="7" cy="5" r="2.5" /><path d="M2 13c0-2.5 2.5-4.5 5-4.5s5 2 5 4.5" />
+    </svg>
+  ),
+  alert: (
+    <svg width="20" height="20" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round">
+      <circle cx="7" cy="7" r="5.5" /><path d="M7 4.2v3.3M7 9.6v.1" />
+    </svg>
+  ),
+  check: (
+    <svg width="20" height="20" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="7" cy="7" r="5.5" /><path d="M4.6 7.1l1.7 1.7 3.2-3.4" />
+    </svg>
+  ),
+  list: (
+    <svg width="20" height="20" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round">
+      <path d="M5 3.5h7M5 7h7M5 10.5h7" /><circle cx="2.3" cy="3.5" r=".6" /><circle cx="2.3" cy="7" r=".6" /><circle cx="2.3" cy="10.5" r=".6" />
     </svg>
   ),
   search: (

@@ -54,3 +54,34 @@ export async function getClientPortalUrl() {
   const { url } = await response.json()
   return url || CLIENT_PORTAL_URL
 }
+
+/**
+ * Opens the client portal in a new tab, signed in when the handoff works.
+ *
+ * The tab is opened synchronously, inside the click, so popup blockers allow
+ * it, then pointed at the sign-in link once the handoff resolves. `noopener`
+ * is deliberately not passed to window.open: with it the browser returns null
+ * instead of the new tab, leaving nothing to navigate (the old behaviour: a
+ * blank tab, and the app tab navigated away). Clearing `opener` gives the same
+ * isolation.
+ *
+ * Throws only when the rep is genuinely not permitted (403); any other failure
+ * falls back to the portal's own sign-in page.
+ */
+export async function openClientPortal() {
+  const tab = window.open('', '_blank')
+  if (tab) tab.opener = null
+  const go = (url) => {
+    if (tab) tab.location.href = url
+    else window.location.assign(url)
+  }
+  try {
+    go(await getClientPortalUrl())
+  } catch (err) {
+    if (err.status === 403) {
+      if (tab) tab.close()
+      throw err
+    }
+    go(CLIENT_PORTAL_URL)
+  }
+}
