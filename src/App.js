@@ -1,18 +1,56 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, lazy, Suspense } from 'react'
 import { supabase, getUserProfile } from './supabaseClient'
-import Dashboard from './pages/Dashboard'
-import NewOnboarding from './pages/NewOnboarding'
-import OnboardingPlan from './pages/OnboardingPlan'
-import Admin from './pages/Admin'
-import SuperAdmin from './pages/SuperAdmin'
-import TimeOff from './pages/TimeOff'
-import EmployeePortal from './pages/EmployeePortal'
 import SetPassword from './pages/SetPassword'
 import { pageToPath, pathToPage, planPath, parseInstanceId, ROLE } from './config'
 import Button from './ui/Button'
 import Field from './ui/Field'
 import { T } from './ui/theme'
 
+
+// Pages are split into their own chunks so the sign-in screen doesn't wait
+// for the whole app to download. Once someone is signed in they're preloaded
+// in the background, so navigating rarely has to wait.
+const PAGE_LOADERS = {
+  Dashboard: () => import('./pages/Dashboard'),
+  NewOnboarding: () => import('./pages/NewOnboarding'),
+  OnboardingPlan: () => import('./pages/OnboardingPlan'),
+  Admin: () => import('./pages/Admin'),
+  SuperAdmin: () => import('./pages/SuperAdmin'),
+  TimeOff: () => import('./pages/TimeOff'),
+  EmployeePortal: () => import('./pages/EmployeePortal'),
+}
+const Dashboard = lazy(PAGE_LOADERS.Dashboard)
+const NewOnboarding = lazy(PAGE_LOADERS.NewOnboarding)
+const OnboardingPlan = lazy(PAGE_LOADERS.OnboardingPlan)
+const Admin = lazy(PAGE_LOADERS.Admin)
+const SuperAdmin = lazy(PAGE_LOADERS.SuperAdmin)
+const TimeOff = lazy(PAGE_LOADERS.TimeOff)
+const EmployeePortal = lazy(PAGE_LOADERS.EmployeePortal)
+
+const PAGE_TITLES = {
+  dashboard: 'Dashboard',
+  'new-onboarding-select': 'New onboarding',
+  'new-onboarding': 'New onboarding',
+  plan: 'Onboarding plan',
+  templates: 'Task templates',
+  documents: 'Documents',
+  'company-resources': 'Company resources',
+  roles: 'Roles',
+  history: 'History',
+  'time-off': 'Time off',
+  'set-password': 'Set your password',
+  'super-admin-users': 'Users',
+  'super-admin-audit': 'Audit log',
+  'super-admin-settings': 'System settings',
+}
+
+function FullPageSpinner() {
+  return (
+    <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} role="status" aria-label="Loading">
+      <div className="il-spinner" />
+    </div>
+  )
+}
 
 // Admin-panel pages. Managers get a read-only dashboard and plans (see README),
 // so these are limited to admins and super admins.
@@ -55,6 +93,21 @@ function App() {
     : page === 'new-onboarding' && !selectedRole ? (canManage ? 'new-onboarding-select' : 'dashboard')
     : page === 'plan' && !activeInstanceId ? 'dashboard'
     : null
+
+  // Warm the page chunks once signed in (idle time, so it never competes
+  // with the first render).
+  useEffect(() => {
+    if (!session) return
+    const warm = () => Object.values(PAGE_LOADERS).forEach(load => load().catch(() => {}))
+    const id = window.requestIdleCallback ? window.requestIdleCallback(warm) : setTimeout(warm, 1500)
+    return () => (window.cancelIdleCallback ? window.cancelIdleCallback(id) : clearTimeout(id))
+  }, [session])
+
+  // Tab title follows the page, so several open tabs are distinguishable.
+  useEffect(() => {
+    const label = !session ? 'Sign in' : employeeView || userProfile?.role === ROLE.EMPLOYEE ? 'My portal' : PAGE_TITLES[page]
+    document.title = label ? `${label} · Integrated Launch` : 'Integrated Launch'
+  }, [page, session, employeeView, userProfile])
 
   useEffect(() => {
     if (redirectTo) navigate(redirectTo, { replace: true })
@@ -241,13 +294,7 @@ useEffect(() => {
     )
   }
 
-  if (profileLoading) {
-    return (
-      <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} aria-label="Loading">
-        <div className="il-spinner" />
-      </div>
-    )
-  }
+  if (profileLoading) return <FullPageSpinner />
 
   if (page === 'set-password') {
     return <SetPassword onComplete={() => navigate('dashboard')} />
@@ -278,81 +325,102 @@ useEffect(() => {
     )
   }
 
-  if (userProfile?.role === ROLE.EMPLOYEE) {
-    return <EmployeePortal session={session} userProfile={userProfile} />
-  }
+  return <Suspense fallback={<FullPageSpinner />}>{renderPage()}</Suspense>
 
-  if (employeeView && userProfile?.employee_id) {
+  function renderPage() {
+    if (userProfile?.role === ROLE.EMPLOYEE) {
+      return <EmployeePortal session={session} userProfile={userProfile} />
+    }
+
+    if (employeeView && userProfile?.employee_id) {
+      return (
+        <EmployeePortal
+          session={session}
+          userProfile={userProfile}
+          onSwitchToAdmin={() => {
+            localStorage.removeItem('il-view-mode')
+            setEmployeeView(false)
+          }}
+        />
+      )
+    }
+
+    if (page.startsWith('super-admin') && role === ROLE.SUPER_ADMIN) {
+      return (
+        <SuperAdmin
+          session={session}
+          userProfile={userProfile}
+          currentPage={page}
+          onNavigate={handleNavigate}
+        />
+      )
+    }
+
+    if (page === 'new-onboarding' && selectedRole) {
+      return (
+        <NewOnboarding
+          session={session}
+          userProfile={userProfile}
+          roleId={selectedRole.id}
+          roleName={selectedRole.name}
+          roleBrand={selectedRole.brand}
+          onBack={() => { setRefreshKey(k => k + 1); navigate('dashboard') }}
+          onNavigate={handleNavigate}
+          onComplete={(instanceId) => {
+            setActiveInstanceId(instanceId)
+            navigate('plan', { instanceId })
+          }}
+        />
+      )
+    }
+
+    if (page === 'plan' && activeInstanceId) {
+      return (
+        <OnboardingPlan
+          session={session}
+          userProfile={userProfile}
+          instanceId={activeInstanceId}
+          onBack={() => { setRefreshKey(k => k + 1); navigate('dashboard') }}
+          onNavigate={handleNavigate}
+        />
+      )
+    }
+
+    if (page === 'time-off' && canManage) {
+      return (
+        <TimeOff
+          session={session}
+          userProfile={userProfile}
+          onNavigate={handleNavigate}
+        />
+      )
+    }
+
+    if (ADMIN_PAGES.includes(page) && canManage) {
+      return (
+        <Admin
+          session={session}
+          userProfile={userProfile}
+          initialTab={page}
+          onBack={() => { setRefreshKey(k => k + 1); navigate('dashboard') }}
+          onNavigate={handleNavigate}
+          onStartOnboarding={(role) => {
+            setSelectedRole(role)
+            navigate('new-onboarding')
+          }}
+          onViewOnboarding={(instanceId) => {
+            setActiveInstanceId(instanceId)
+            navigate('plan', { instanceId })
+          }}
+        />
+      )
+    }
+
     return (
-      <EmployeePortal
+      <Dashboard
         session={session}
         userProfile={userProfile}
-        onSwitchToAdmin={() => {
-          localStorage.removeItem('il-view-mode')
-          setEmployeeView(false)
-        }}
-      />
-    )
-  }
-
-  if (page.startsWith('super-admin') && role === ROLE.SUPER_ADMIN) {
-    return (
-      <SuperAdmin
-        session={session}
-        userProfile={userProfile}
-        currentPage={page}
-        onNavigate={handleNavigate}
-      />
-    )
-  }
-
-  if (page === 'new-onboarding' && selectedRole) {
-    return (
-      <NewOnboarding
-        session={session}
-        userProfile={userProfile}
-        roleId={selectedRole.id}
-        roleName={selectedRole.name}
-        roleBrand={selectedRole.brand}
-        onBack={() => { setRefreshKey(k => k + 1); navigate('dashboard') }}
-        onNavigate={handleNavigate}
-        onComplete={(instanceId) => {
-          setActiveInstanceId(instanceId)
-          navigate('plan', { instanceId })
-        }}
-      />
-    )
-  }
-
-  if (page === 'plan' && activeInstanceId) {
-    return (
-      <OnboardingPlan
-        session={session}
-        userProfile={userProfile}
-        instanceId={activeInstanceId}
-        onBack={() => { setRefreshKey(k => k + 1); navigate('dashboard') }}
-        onNavigate={handleNavigate}
-      />
-    )
-  }
-
-  if (page === 'time-off' && canManage) {
-    return (
-      <TimeOff
-        session={session}
-        userProfile={userProfile}
-        onNavigate={handleNavigate}
-      />
-    )
-  }
-
-  if (ADMIN_PAGES.includes(page) && canManage) {
-    return (
-      <Admin
-        session={session}
-        userProfile={userProfile}
-        initialTab={page}
-        onBack={() => { setRefreshKey(k => k + 1); navigate('dashboard') }}
+        refreshKey={refreshKey}
         onNavigate={handleNavigate}
         onStartOnboarding={(role) => {
           setSelectedRole(role)
@@ -365,23 +433,6 @@ useEffect(() => {
       />
     )
   }
-
-  return (
-    <Dashboard
-      session={session}
-      userProfile={userProfile}
-      refreshKey={refreshKey}
-      onNavigate={handleNavigate}
-      onStartOnboarding={(role) => {
-        setSelectedRole(role)
-        navigate('new-onboarding')
-      }}
-      onViewOnboarding={(instanceId) => {
-        setActiveInstanceId(instanceId)
-        navigate('plan', { instanceId })
-      }}
-    />
-  )
 }
 
 export default App
