@@ -8,7 +8,7 @@ import { handleSupabaseError } from '../utils/handleError'
 import { getTechSupportEmail } from '../utils/getHrEmail'
 import { logAudit } from '../utils/auditLog'
 import { useWindowSize } from '../hooks/useWindowSize'
-import { SCHEDULE_BUCKETS, getCurrentYear, FEATURES, ONBOARDING_STATUS, TIME_OFF_STATUS } from '../config'
+import { SCHEDULE_BUCKETS, getCurrentYear, FEATURES, ONBOARDING_STATUS, TIME_OFF_STATUS, brandName } from '../config'
 import { getInitials } from '../utils/formatUtils'
 import { normalizeTask, groupParentsByBucket, bucketDateHint, isBucketUpcoming } from '../utils/schedule'
 import { TYPE_LABELS, StatusPill, TypeIcon, fmtDateRange } from '../utils/timeOffShared'
@@ -20,6 +20,12 @@ import EmptyState, { EmptyIcons } from '../ui/EmptyState'
 import { T } from '../ui/theme'
 import { formatDate } from '../utils/dates'
 import { safeFileName } from '../utils/files'
+import CheckCircle from '../ui/CheckCircle'
+import Tabs from '../ui/Tabs'
+import Button from '../ui/Button'
+import Segmented from '../ui/Segmented'
+import FileButton from '../ui/FileButton'
+import SearchInput from '../ui/SearchInput'
 import ThemeToggle from '../ui/ThemeToggle'
 import ProgressRing from '../ui/ProgressRing'
 import AnimatedNumber from '../ui/AnimatedNumber'
@@ -37,8 +43,6 @@ const BASE_STYLES = {
   phaseLabel: { fontSize: '11px', fontWeight: 600, color: T.subtle, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '12px', marginTop: '28px' },
   parentRow: { display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 0', borderBottom: '1px solid var(--border-subtle)', cursor: 'pointer' },
   subtaskRow: { display: 'flex', alignItems: 'center', gap: '14px', padding: '10px 0 10px 32px', borderBottom: `1px solid ${T.bg}`, cursor: 'pointer', background: 'var(--surface-raised)' },
-  checkbox: (checked) => ({ width: '20px', height: '20px', borderRadius: '50%', flexShrink: 0, border: checked ? 'none' : '1.5px solid #d0cfc9', background: checked ? `linear-gradient(135deg, ${T.brand}, ${T.brandMid})` : T.surface, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s', cursor: 'pointer', boxShadow: checked ? '0 0 0 3px rgba(0,102,204,0.12)' : 'none' }),
-  subtaskCheckbox: (checked) => ({ width: '15px', height: '15px', borderRadius: '50%', flexShrink: 0, border: checked ? 'none' : '1.5px solid #d0cfc9', background: checked ? `linear-gradient(135deg, ${T.brand}, ${T.brandMid})` : T.surface, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }),
   taskName: (checked) => ({ fontSize: '14px', color: checked ? T.subtle : T.text, textDecoration: checked ? 'line-through' : 'none', flex: 1 }),
   subtaskName: (checked) => ({ fontSize: '13px', color: checked ? T.subtle : T.muted, textDecoration: checked ? 'line-through' : 'none', flex: 1 }),
   chevron: (open) => ({ fontSize: '10px', color: T.subtle, transform: open ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }),
@@ -48,7 +52,6 @@ const BASE_STYLES = {
   balLabel: { fontSize: '11px', color: T.subtle, marginTop: '4px', fontWeight: 500, letterSpacing: '0.1px' },
   fieldLabel: { fontSize: '12px', color: T.muted, marginBottom: '6px', display: 'block', fontWeight: 500 },
   fieldInput: { width: '100%', minWidth: 0, background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radiusMd, padding: '9px 12px', fontSize: '13px', color: T.text, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box', WebkitAppearance: 'none', appearance: 'none' },
-  submitBtn: (disabled) => ({ background: disabled ? T.border : T.btnPrimaryBg, color: '#fff', border: 'none', borderRadius: T.radiusMd, padding: '10px 20px', fontSize: '13px', fontWeight: 500, cursor: disabled ? 'default' : 'pointer', fontFamily: 'inherit', letterSpacing: '0.1px' }),
   torRow: { display: 'flex', alignItems: 'center', gap: '12px', padding: '13px 0', borderBottom: '1px solid var(--border-subtle)', flexWrap: 'wrap' },
   cancelBtn: { fontSize: '12px', color: T.muted, background: 'none', border: `1px solid ${T.border}`, borderRadius: T.radiusSm, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 },
 }
@@ -575,11 +578,6 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
     e.target.value = ''
   }
 
-  const checkIcon = (size = 9) => (
-    <svg width={size} height={size - 2} viewBox="0 0 10 8" fill="none">
-      <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  )
 
   const styles = {
     ...BASE_STYLES,
@@ -587,9 +585,6 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
     hero: { padding: isMobile ? '24px 16px 0' : '44px 40px 0', maxWidth: isMobile ? 'none' : '720px', margin: '0 auto' },
     name: { fontSize: isMobile ? '22px' : '26px', fontWeight: 600, letterSpacing: '-0.8px', marginBottom: '4px' },
     progressWrap: { marginTop: '20px', marginBottom: isMobile ? '20px' : '32px' },
-    tabs: { display: 'flex', gap: '0', borderBottom: '1px solid var(--border)', padding: isMobile ? '0 16px' : '0 40px', maxWidth: isMobile ? 'none' : '720px', margin: '0 auto', overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' },
-    tab: (active) => ({ fontSize: '13px', fontWeight: active ? 600 : 400, color: active ? 'var(--brand)' : 'var(--muted)', padding: '12px 0', marginRight: isMobile ? '18px' : '24px', background: 'none', border: 'none', borderBottom: active ? '2px solid var(--brand)' : '2px solid transparent', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', flexShrink: 0, transition: 'color 0.12s ease, border-color 0.12s ease' }),
-    tabDisabled: { fontSize: '13px', fontWeight: 400, color: '#c4c3bf', padding: '12px 0', marginRight: isMobile ? '18px' : '24px', background: 'none', border: 'none', borderBottom: '2px solid transparent', cursor: 'default', fontFamily: 'inherit', pointerEvents: 'none', whiteSpace: 'nowrap', flexShrink: 0 },
     content: { padding: isMobile ? '20px 16px' : '28px 40px', maxWidth: isMobile ? 'none' : '720px', margin: '0 auto' },
     balCard: { background: 'var(--glass)', backdropFilter: 'var(--glass-filter)', WebkitBackdropFilter: 'var(--glass-filter)', border: '1px solid var(--glass-border)', borderRadius: T.radiusLg, padding: isMobile ? '16px' : '22px', marginBottom: '24px', boxShadow: 'var(--glass-highlight), var(--glass-shadow)' },
     balGrid: { display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: isMobile ? '12px' : '16px' },
@@ -658,7 +653,7 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
               {displayRole && `${displayRole} · `}
               {instance && displayHireDate
                 ? `Started ${formatDate(displayHireDate)}`
-                : (employee?.brand || userProfile?.brand || 'Integrated Staffing')}
+                : (brandName(employee?.brand || userProfile?.brand) || 'Integrated Staffing')}
             </div>
           </div>
           {instance && !isMobile && (
@@ -687,28 +682,22 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
         )}
       </div>
 
-      <div style={styles.tabs}>
-        {instance && <button style={styles.tab(activeTab === 'checklist')} onClick={() => setActiveTab('checklist')}>My checklist</button>}
-        {instance && (
-          <button style={styles.tab(activeTab === 'documents')} onClick={() => setActiveTab('documents')}>
-            My Documents
-            {unsignedDocCount > 0 && (
-              <span className="il-tab-badge" style={{ background: activeTab === 'documents' ? 'var(--border)' : 'var(--hover-bg)', color: activeTab === 'documents' ? 'var(--text)' : 'var(--muted)' }}>
-                {unsignedDocCount}
-              </span>
-            )}
-          </button>
-        )}
-        <button style={styles.tab(activeTab === 'company-resources')} onClick={() => setActiveTab('company-resources')}>Company Resources</button>
-        {FEATURES.employeeTimeOff
-          ? <button style={styles.tab(activeTab === 'time-off')} onClick={() => setActiveTab('time-off')}>Time Off</button>
-          : <button style={styles.tabDisabled} title="Coming soon">Time Off</button>}
-        {FEATURES.techSupport
-          ? <button style={styles.tab(activeTab === 'technical-tickets')} onClick={() => setActiveTab('technical-tickets')}>Tech Support</button>
-          : <button style={styles.tabDisabled} title="Coming soon">Tech Support</button>}
-        {isSalesRep(userProfile) && (
-          <button style={styles.tab(activeTab === 'client-packages')} onClick={() => setActiveTab('client-packages')}>Client Packages</button>
-        )}
+      <div style={{ maxWidth: isMobile ? 'none' : '720px', margin: '0 auto', padding: isMobile ? '0 16px' : '0 40px', borderBottom: `1px solid ${T.border}` }}>
+        <Tabs
+          label="Your portal"
+          value={activeTab}
+          onChange={setActiveTab}
+          gap={isMobile ? 18 : 24}
+          items={[
+            instance && { id: 'checklist', label: 'My checklist' },
+            instance && { id: 'documents', label: 'My documents', badge: unsignedDocCount || null },
+            { id: 'company-resources', label: 'Company resources' },
+            // Unreleased features are labelled rather than silently greyed out.
+            { id: 'time-off', label: 'Time off', disabled: !FEATURES.employeeTimeOff, badge: FEATURES.employeeTimeOff ? null : 'Soon' },
+            { id: 'technical-tickets', label: 'Tech support', disabled: !FEATURES.techSupport, badge: FEATURES.techSupport ? null : 'Soon' },
+            isSalesRep(userProfile) && { id: 'client-packages', label: 'Client packages' },
+          ].filter(Boolean)}
+        />
       </div>
 
       <div style={styles.content}>
@@ -742,9 +731,7 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
                             <button type="button" className="il-row" aria-expanded={!!isExpanded}
                               style={{ ...styles.parentRow, width: '100%', background: 'none', border: 'none', borderBottom: '1px solid var(--border-subtle)', textAlign: 'left', font: 'inherit' }}
                               onClick={() => setExpandedTasks(prev => ({ ...prev, [task.id]: !prev[task.id] }))}>
-                              <span className="il-checkbox" style={styles.checkbox(isChecked)} aria-hidden="true">
-                                {isChecked && checkIcon()}
-                              </span>
+                              <CheckCircle checked={!!isChecked} size={20} />
                               <span style={styles.taskName(isChecked)}>{task.name}</span>
                               <span style={styles.subtaskCount}>{completedSubs}/{subtasks.length}</span>
                               <span style={styles.chevron(isExpanded)}>▶</span>
@@ -754,9 +741,7 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
                               aria-label={`Mark "${task.name}" ${completions[task.id] ? 'incomplete' : 'complete'}`}
                               style={{ ...styles.parentRow, width: '100%', background: 'none', border: 'none', borderBottom: '1px solid var(--border-subtle)', textAlign: 'left', font: 'inherit' }}
                               onClick={(e) => toggleTask(task.id, completions[task.id], e)}>
-                              <span className="il-checkbox" style={styles.checkbox(isChecked)} aria-hidden="true">
-                                {isChecked && checkIcon()}
-                              </span>
+                              <CheckCircle checked={!!isChecked} size={20} />
                               <span style={styles.taskName(isChecked)}>{task.name}</span>
                             </button>
                           )}
@@ -767,9 +752,7 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
                                   aria-label={`Mark "${s.name}" ${completions[s.id] ? 'incomplete' : 'complete'}`}
                                   style={{ ...styles.subtaskRow, width: '100%', border: 'none', borderBottom: '1px solid var(--border-subtle)', textAlign: 'left', font: 'inherit' }}
                                   onClick={(e) => toggleTask(s.id, completions[s.id], e)}>
-                                  <span className="il-checkbox" style={styles.subtaskCheckbox(completions[s.id])} aria-hidden="true">
-                                    {completions[s.id] && checkIcon(7)}
-                                  </span>
+                                  <CheckCircle checked={!!completions[s.id]} size={15} />
                                   <span style={styles.subtaskName(completions[s.id])}>{s.name}</span>
                                 </button>
                               ))}
@@ -802,16 +785,14 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
                 <div key={doc.id} style={{ padding: '16px 0', borderBottom: '1px solid var(--border-subtle)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div style={{ flex: 1, fontSize: '14px', color: 'var(--text)', fontWeight: 500 }}>{doc.name}</div>
-                    <a href={doc.file_url} target="_blank" rel="noreferrer" style={{ fontSize: '12px', color: 'var(--muted)', textDecoration: 'underline', flexShrink: 0 }}>View</a>
+                    <a href={doc.file_url} target="_blank" rel="noreferrer" className="il-btn-link" style={{ fontSize: '12px', color: T.brand, textDecoration: 'none', flexShrink: 0 }}>View</a>
                     {signed ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                         <span style={{ fontSize: '12px', color: 'var(--success)', fontWeight: 500 }}>✓ Received</span>
-                        <button onClick={() => toggleDocument(doc.id)} style={{ fontSize: '11px', color: 'var(--subtle)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>Undo</button>
+                        <Button variant="link" size="xs" style={{ color: T.subtle }} onClick={() => toggleDocument(doc.id)} aria-label={`Undo: mark ${doc.name} as not received`}>Undo</Button>
                       </div>
                     ) : (
-                      <button onClick={() => toggleDocument(doc.id)} style={{ fontSize: '12px', color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: '5px', padding: '4px 10px', background: 'var(--surface)', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
-                        Mark as received
-                      </button>
+                      <Button size="xs" variant="secondary" onClick={() => toggleDocument(doc.id)}>Mark as received</Button>
                     )}
                   </div>
                   <div style={{ marginTop: '10px' }}>
@@ -819,17 +800,10 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <span style={{ fontSize: '12px', color: 'var(--success)' }}>✓ Uploaded</span>
                         <a href={completedFileUrl} target="_blank" rel="noreferrer" style={{ fontSize: '12px', color: 'var(--brand)', textDecoration: 'none' }}>View file</a>
-                        <label style={{ fontSize: '12px', color: isUploading ? 'var(--subtle)' : 'var(--muted)', cursor: isUploading ? 'default' : 'pointer' }}>
-                          {isUploading ? 'Uploading...' : 'Replace'}
-                          <input type="file" style={{ display: 'none' }} accept=".pdf,.doc,.docx" onChange={e => handleEmployeeDocumentUpload(e, doc.id)} disabled={!!uploadingDocId} />
-                        </label>
+                        <FileButton variant="link" icon={false} busy={isUploading} accept=".pdf,.doc,.docx" onFile={e => handleEmployeeDocumentUpload(e, doc.id)}>Replace</FileButton>
                       </div>
                     ) : (
-                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: isUploading ? 'var(--subtle)' : 'var(--brand)', cursor: isUploading ? 'default' : 'pointer', border: '1px solid ' + (isUploading ? 'var(--border)' : 'var(--brand-light)'), borderRadius: '6px', padding: '6px 12px', background: isUploading ? 'var(--surface-raised)' : 'var(--brand-light)' }}>
-                        {!isUploading && <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M7 10V4M4 7l3-3 3 3"/><path d="M2 12h10"/></svg>}
-                        {isUploading ? 'Uploading...' : 'Upload completed document'}
-                        <input type="file" style={{ display: 'none' }} accept=".pdf,.doc,.docx" onChange={e => handleEmployeeDocumentUpload(e, doc.id)} disabled={!!uploadingDocId} />
-                      </label>
+                      <FileButton variant="soft" busy={isUploading} accept=".pdf,.doc,.docx" onFile={e => handleEmployeeDocumentUpload(e, doc.id)}>Upload completed document</FileButton>
                     )}
                   </div>
                 </div>
@@ -847,20 +821,8 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
             ) : (
               <>
                 {companyResources.length > 3 && (
-                  <div style={{ position: 'relative', marginBottom: '16px' }}>
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#a4a39f" strokeWidth="1.5" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
-                      <circle cx="6" cy="6" r="4"/><path d="M10 10l2.5 2.5"/>
-                    </svg>
-                    <input
-                      type="text"
-                      placeholder="Search resources…"
-                      value={resourceSearch}
-                      onChange={e => setResourceSearch(e.target.value)}
-                      style={{ width: '100%', boxSizing: 'border-box', border: '1px solid var(--border)', borderRadius: '7px', padding: '8px 32px 8px 32px', fontSize: '13px', fontFamily: 'inherit', color: 'var(--text)', background: 'var(--surface)', outline: 'none' }}
-                    />
-                    {resourceSearch && (
-                      <button onClick={() => setResourceSearch('')} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--subtle)', fontSize: '16px', lineHeight: 1, padding: 0 }}>×</button>
-                    )}
+                  <div style={{ marginBottom: '16px' }}>
+                    <SearchInput value={resourceSearch} onChange={setResourceSearch} placeholder="Search resources…" label="Search company resources" />
                   </div>
                 )}
                 {(() => {
@@ -877,11 +839,12 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
                         const rawExt = (doc.file_url || '').split('?')[0].split('.').pop().toLowerCase()
                         const ext = rawExt.length <= 5 ? rawExt : ''
                         const typeLabel = ext === 'pdf' ? 'PDF' : ext === 'docx' || ext === 'doc' ? 'DOC' : ext === 'xlsx' || ext === 'xls' ? 'XLS' : ext === 'pptx' || ext === 'ppt' ? 'PPT' : ext ? ext.toUpperCase() : 'FILE'
-                        const iconBg = ext === 'pdf' ? '#fff1f0' : ext === 'docx' || ext === 'doc' ? '#f0f7ff' : ext === 'xlsx' || ext === 'xls' ? '#f0faf4' : ext === 'pptx' || ext === 'ppt' ? '#fff8f0' : '#f4f3ef'
-                        const iconStroke = ext === 'pdf' ? '#c04040' : ext === 'docx' || ext === 'doc' ? '#0066cc' : ext === 'xlsx' || ext === 'xls' ? '#1a7a4a' : ext === 'pptx' || ext === 'ppt' ? '#c27a30' : '#6b6b67'
+                        const hue = ext === 'pdf' ? 'var(--danger)' : ext === 'docx' || ext === 'doc' ? 'var(--brand)' : ext === 'xlsx' || ext === 'xls' ? 'var(--success)' : ext === 'pptx' || ext === 'ppt' ? 'var(--warning)' : 'var(--muted)'
+                        const iconBg = `color-mix(in srgb, ${hue} 14%, var(--surface))`
+                        const iconStroke = hue
                         return (
                           <a key={doc.id} href={doc.file_url} target="_blank" rel="noreferrer" className="il-resource-tile"
-                            style={{ display: 'flex', flexDirection: 'column', background: 'var(--glass)', backdropFilter: 'var(--glass-filter)', WebkitBackdropFilter: 'var(--glass-filter)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--glass-highlight)', padding: '14px', textDecoration: 'none', color: 'var(--text)' }}>
+                            style={{ display: 'flex', flexDirection: 'column', background: T.surface, border: `1px solid ${T.border}`, borderRadius: 'var(--radius-md)', boxShadow: T.shadowSm, padding: '14px', textDecoration: 'none', color: 'var(--text)' }}>
                             <div style={{ width: '34px', height: '34px', borderRadius: '7px', background: iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '10px', flexShrink: 0 }}>
                               <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke={iconStroke} strokeWidth="1.5">
                                 <path d="M3 2h6l3 3v7H3z"/><path d="M9 2v3h3"/>
@@ -937,20 +900,20 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
                         <div style={styles.balLabel}>Used</div>
                       </div>
                       <div style={styles.balStat}>
-                        <div style={{ ...styles.balNum(false), color: torPending > 0 ? '#b8740a' : '#18181b' }}>{torPending}</div>
+                        <div style={{ ...styles.balNum(false), color: torPending > 0 ? T.warning : T.text }}>{torPending}</div>
                         <div style={styles.balLabel}>Pending</div>
                       </div>
                       <div style={styles.balStat}>
-                        <div style={{ ...styles.balNum(torRemaining < 0), fontSize: '28px', color: torRemaining < 0 ? '#c04040' : '#0066cc' }}>{torRemaining}</div>
-                        <div style={{ ...styles.balLabel, color: torRemaining < 0 ? '#c04040' : '#0066cc' }}>Remaining</div>
-                        {torRemaining < 0 && <div style={{ fontSize: '10px', color: '#c04040', marginTop: '2px' }}>Over limit</div>}
+                        <div style={{ ...styles.balNum(torRemaining < 0), fontSize: '28px', color: torRemaining < 0 ? T.danger : T.brand }}>{torRemaining}</div>
+                        <div style={{ ...styles.balLabel, color: torRemaining < 0 ? T.danger : T.brand }}>Remaining</div>
+                        {torRemaining < 0 && <div style={{ fontSize: '10px', color: T.danger, marginTop: '2px' }}>Over limit</div>}
                       </div>
                     </div>
                     {torTotal > 0 && (
                       <div style={{ marginTop: '14px', borderTop: '1px solid var(--border-subtle)', paddingTop: '14px' }}>
                         <div style={{ height: '5px', borderRadius: '3px', background: 'var(--border-subtle)', overflow: 'hidden', display: 'flex' }}>
                           {torUsed > 0 && <div style={{ width: `${Math.min(100, (torUsed / torTotal) * 100)}%`, background: 'var(--text)', transition: 'width 0.3s ease' }} />}
-                          {torPending > 0 && <div style={{ width: `${Math.min(100 - (torUsed / torTotal) * 100, (torPending / torTotal) * 100)}%`, background: '#d4901a', transition: 'width 0.3s ease' }} />}
+                          {torPending > 0 && <div style={{ width: `${Math.min(100 - (torUsed / torTotal) * 100, (torPending / torTotal) * 100)}%`, background: T.warning, transition: 'width 0.3s ease' }} />}
                         </div>
                       </div>
                     )}
@@ -998,32 +961,22 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
                   {/* AM / PM / Full day */}
                   <div style={{ marginBottom: '20px' }}>
                     <label style={styles.fieldLabel}>Duration</label>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      {[{ value: 'full', label: 'Full day(s)' }, { value: 'am', label: 'AM' }, { value: 'pm', label: 'PM' }].map(opt => {
-                        const active = torDayPortion === opt.value
-                        return (
-                          <button key={opt.value} onClick={() => handleDayPortionChange(opt.value)}
-                            style={{ padding: '6px 14px', border: `1.5px solid ${active ? '#18181b' : '#e2e1dd'}`, borderRadius: '6px', background: active ? '#18181b' : '#fff', color: active ? '#fff' : '#70706b', fontSize: '13px', fontWeight: active ? 500 : 400, cursor: 'pointer', fontFamily: 'inherit' }}>
-                            {opt.label}
-                          </button>
-                        )
-                      })}
-                    </div>
+                    <Segmented label="Duration" value={torDayPortion} onChange={handleDayPortionChange}
+                      options={[{ value: 'full', label: 'Full day(s)' }, { value: 'am', label: 'Morning' }, { value: 'pm', label: 'Afternoon' }]} />
                   </div>
 
                   {/* Type of leave */}
                   <div style={{ marginBottom: '20px' }}>
                     <label style={styles.fieldLabel}>Type of leave</label>
-                    <div style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
+                    <div role="radiogroup" aria-label="Type of leave" style={{ border: `1px solid ${T.border}`, borderRadius: T.radiusMd, overflow: 'hidden' }}>
                       {TYPE_OPTIONS.map((o, i) => {
                         const active = torType === o.value
                         return (
-                          <label key={o.value} onClick={() => setTorType(o.value)}
-                            style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '11px 14px', cursor: 'pointer', background: active ? '#fafaf9' : '#fff', borderTop: i > 0 ? '1px solid var(--border-subtle)' : 'none' }}>
-                            <div style={{ width: '16px', height: '16px', borderRadius: '50%', flexShrink: 0, border: `1.5px solid ${active ? '#18181b' : '#e2e1dd'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'border-color 0.12s' }}>
-                              {active && <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#18181b' }} />}
-                            </div>
-                            <span style={{ fontSize: '13px', color: 'var(--text)', fontWeight: active ? 500 : 400 }}>{o.label}</span>
+                          <label key={o.value} className="il-row"
+                            style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '11px 14px', cursor: 'pointer', background: active ? T.brandLight : 'transparent', borderTop: i > 0 ? `1px solid ${T.borderSubtle}` : 'none' }}>
+                            <input type="radio" name="Type of leave" value={o.value} checked={active} onChange={() => setTorType(o.value)}
+                              style={{ width: '16px', height: '16px', margin: 0, accentColor: 'var(--brand)', cursor: 'pointer' }} />
+                            <span style={{ fontSize: '13px', color: T.text, fontWeight: active ? 500 : 400 }}>{o.label}</span>
                           </label>
                         )
                       })}
@@ -1058,18 +1011,17 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
 
                   {/* Flexibility */}
                   <div style={{ marginBottom: '20px' }}>
-                    <label style={styles.fieldLabel}>Flexibility <span style={{ color: '#c04040' }}>*</span></label>
+                    <label style={styles.fieldLabel}>Flexibility <span aria-hidden="true" style={{ color: T.danger }}>*</span></label>
                     <div style={{ fontSize: '11px', color: 'var(--subtle)', marginBottom: '8px' }}>In case of conflicting business issues or overlapping leave requests</div>
-                    <div style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
+                    <div role="radiogroup" aria-label="Flexibility" style={{ border: `1px solid ${T.border}`, borderRadius: T.radiusMd, overflow: 'hidden' }}>
                       {FLEXIBILITY_OPTIONS.map((o, i) => {
                         const active = torFlexibility === o.value
                         return (
-                          <label key={o.value} onClick={() => setTorFlexibility(o.value)}
-                            style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '11px 14px', cursor: 'pointer', background: active ? '#fafaf9' : '#fff', borderTop: i > 0 ? '1px solid var(--border-subtle)' : 'none' }}>
-                            <div style={{ width: '16px', height: '16px', borderRadius: '50%', flexShrink: 0, border: `1.5px solid ${active ? '#18181b' : '#e2e1dd'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'border-color 0.12s' }}>
-                              {active && <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#18181b' }} />}
-                            </div>
-                            <span style={{ fontSize: '13px', color: 'var(--text)', fontWeight: active ? 500 : 400 }}>{o.label}</span>
+                          <label key={o.value} className="il-row"
+                            style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '11px 14px', cursor: 'pointer', background: active ? T.brandLight : 'transparent', borderTop: i > 0 ? `1px solid ${T.borderSubtle}` : 'none' }}>
+                            <input type="radio" name="Flexibility" value={o.value} checked={active} onChange={() => setTorFlexibility(o.value)}
+                              style={{ width: '16px', height: '16px', margin: 0, accentColor: 'var(--brand)', cursor: 'pointer' }} />
+                            <span style={{ fontSize: '13px', color: T.text, fontWeight: active ? 500 : 400 }}>{o.label}</span>
                           </label>
                         )
                       })}
@@ -1100,7 +1052,7 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
                   )}
 
                   {torExceedsBalance && (
-                    <div style={{ fontSize: '12px', color: '#d4901a', background: '#fffbf0', border: '1px solid #f5e4b0', borderRadius: '6px', padding: '10px 12px', marginBottom: '16px' }}>
+                    <div role="status" style={{ fontSize: '12px', color: T.warning, background: T.warningBg, border: `1px solid ${T.warningBorder}`, borderRadius: T.radiusSm, padding: '10px 12px', marginBottom: '16px' }}>
                       This request exceeds your remaining balance by {Math.abs(torRemaining - businessDaysPreview)}d. It can still be submitted.
                     </div>
                   )}
@@ -1111,9 +1063,7 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
                     </div>
                   )}
 
-                  <button style={styles.submitBtn(submitDisabled)} disabled={submitDisabled} onClick={submitTimeOffRequest}>
-                    {torSubmitting ? 'Submitting...' : 'Submit request'}
-                  </button>
+                  <Button disabled={submitDisabled && !torSubmitting} busy={torSubmitting} busyLabel="Submitting…" onClick={submitTimeOffRequest}>Submit request</Button>
                   {submitDisabled && !torSubmitting && (
                     <div className="il-field-hint" data-tone="muted" style={{ marginTop: '8px' }}>
                       {!torStartDate || !torEndDate
@@ -1176,21 +1126,11 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
 
               <div style={{ marginBottom: '16px' }}>
                 <label style={styles.fieldLabel}>Category</label>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                  {TICKET_CATEGORIES.map(opt => {
-                    const active = ticketCategory === opt.value
-                    return (
-                      <button key={opt.value} onClick={() => setTicketCategory(opt.value)}
-                        style={{ padding: '6px 12px', border: `1.5px solid ${active ? '#18181b' : '#e2e1dd'}`, borderRadius: '6px', background: active ? '#18181b' : '#fff', color: active ? '#fff' : '#70706b', fontSize: '12px', fontWeight: active ? 500 : 400, cursor: 'pointer', fontFamily: 'inherit' }}>
-                        {opt.label}
-                      </button>
-                    )
-                  })}
-                </div>
+<Segmented size="sm" label="Category" value={ticketCategory} onChange={setTicketCategory} options={TICKET_CATEGORIES} />
               </div>
 
               <div style={{ marginBottom: '16px' }}>
-                <label style={styles.fieldLabel}>Subject <span style={{ color: '#c04040' }}>*</span></label>
+                <label style={styles.fieldLabel}>Subject <span aria-hidden="true" style={{ color: T.danger }}>*</span></label>
                 <input
                   type="text"
                   style={styles.fieldInput}
@@ -1201,7 +1141,7 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
               </div>
 
               <div style={{ marginBottom: '20px' }}>
-                <label style={styles.fieldLabel}>Details <span style={{ color: '#c04040' }}>*</span></label>
+                <label style={styles.fieldLabel}>Details <span aria-hidden="true" style={{ color: T.danger }}>*</span></label>
                 <textarea
                   style={{ ...styles.fieldInput, resize: 'vertical', minHeight: '100px' }}
                   placeholder="What happened? What were you trying to do? Any error messages?"
@@ -1210,13 +1150,7 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
                 />
               </div>
 
-              <button
-                style={styles.submitBtn(!ticketTitle.trim() || !ticketDescription.trim() || ticketSubmitting)}
-                disabled={!ticketTitle.trim() || !ticketDescription.trim() || ticketSubmitting}
-                onClick={submitTicket}
-              >
-                {ticketSubmitting ? 'Submitting…' : 'Submit ticket'}
-              </button>
+              <Button disabled={!ticketTitle.trim() || !ticketDescription.trim()} busy={ticketSubmitting} busyLabel="Submitting…" onClick={submitTicket}>Submit ticket</Button>
             </div>
 
             {submittedTickets.length > 0 && (
@@ -1230,7 +1164,7 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
                     </div>
                     <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
                       {new Date(ticket.submittedAt).toLocaleString('en-CA', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                      <span style={{ marginLeft: '8px', color: '#1a7a4a', fontWeight: 500 }}>✓ Sent</span>
+                      <span style={{ marginLeft: '8px', color: T.success, fontWeight: 500 }}>✓ Sent</span>
                     </div>
                   </div>
                 ))}
@@ -1241,21 +1175,14 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
 
         {activeTab === 'client-packages' && (
           <div className="il-tab-content">
-            <div style={{ border: `1px solid ${T.border}`, borderRadius: T.radiusMd, padding: '24px', background: T.surface, maxWidth: '520px' }}>
+            <div style={{ border: `1px solid ${T.border}`, borderRadius: T.radiusLg, padding: '24px', background: T.surface, maxWidth: '520px', boxShadow: T.shadowSm }}>
               <div style={{ ...T.type.h2, marginBottom: '8px' }}>Client onboarding packages</div>
               <p style={{ ...T.type.body, color: T.muted, margin: '0 0 20px' }}>
                 Send a new client company their contract, health &amp; safety questionnaire, and
                 staffing request form — then track what they've filled in and signed. This opens
                 the client portal in a new tab; you'll be signed in automatically.
               </p>
-              <button
-                style={{
-                  fontSize: '13px', fontWeight: 500, color: '#fff', background: T.brand,
-                  border: 'none', borderRadius: T.radiusSm, padding: '9px 16px',
-                  cursor: portalOpening ? 'default' : 'pointer', fontFamily: 'inherit',
-                  opacity: portalOpening ? 0.6 : 1
-                }}
-                disabled={portalOpening}
+              <Button busy={portalOpening} busyLabel="Opening…"
                 onClick={async () => {
                   if (portalOpening) return
                   setPortalOpening(true)
@@ -1269,17 +1196,17 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
                   }
                 }}
               >
-                {portalOpening ? 'Opening…' : 'Open client portal'}
-              </button>
+                Open client portal
+              </Button>
             </div>
           </div>
         )}
       </div>
 
       {celebration && (
-        <div style={{
+        <div role="status" style={{
           position: 'fixed', bottom: isMobile ? '80px' : '32px', left: '50%', transform: 'translateX(-50%)',
-          background: '#18181b', color: '#fff', borderRadius: '12px',
+          background: 'var(--text)', color: 'var(--bg)', borderRadius: '12px',
           padding: '16px 24px', fontSize: '14px', fontWeight: 500,
           display: 'flex', alignItems: 'center', gap: '10px',
           boxShadow: '0 8px 32px rgba(0,0,0,0.15)', zIndex: 1000,

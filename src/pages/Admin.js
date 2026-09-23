@@ -7,8 +7,15 @@ import useToast from '../hooks/useToast'
 import { handleSupabaseError } from '../utils/handleError'
 import { logAudit } from '../utils/auditLog'
 import { useWindowSize } from '../hooks/useWindowSize'
-import { PHASES, BUCKET_SECTIONS, ONBOARDING_STATUS } from '../config'
+import { PHASES, BUCKET_SECTIONS, ONBOARDING_STATUS, BRANDS, BRAND_CODES, brandName } from '../config'
 import { T } from '../ui/theme'
+import PageHeader from '../ui/PageHeader'
+import Button from '../ui/Button'
+import Segmented from '../ui/Segmented'
+import FileButton from '../ui/FileButton'
+import EmptyState, { EmptyIcons } from '../ui/EmptyState'
+import { SkeletonLine } from '../components/Skeleton'
+import { humanize } from '../utils/formatUtils'
 import { formatDate } from '../utils/dates'
 import { safeFileName } from '../utils/files'
 
@@ -24,33 +31,14 @@ function sortTemplates(a, b) {
 }
 
 const BASE_STYLES = {
-  title: { fontSize: '20px', fontWeight: 600, letterSpacing: '-0.5px', color: T.text },
-  sub: { fontSize: '13px', color: T.muted, marginTop: '2px' },
-  input: { border: `1px solid ${T.border}`, borderRadius: T.radiusMd, padding: '9px 12px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', background: T.surface, color: T.text },
-  btnPrimary: { background: T.btnPrimaryBg, color: '#fff', border: 'none', borderRadius: T.radiusMd, padding: '9px 16px', fontSize: '13px', fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '0.1px' },
-  btnGhost: { background: 'none', border: 'none', color: T.subtle, fontSize: '12px', cursor: 'pointer', fontFamily: 'inherit', padding: 0 },
-  label: { fontSize: '12px', color: T.muted, marginBottom: '6px', display: 'block', fontWeight: 500 },
   row: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid var(--border-subtle)' },
   rowName: { fontSize: '13px', color: T.text },
   rowMuted: { fontSize: '12px', color: T.subtle },
   phaseLabel: { fontSize: '11px', fontWeight: 600, color: T.subtle, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px', marginTop: '24px' },
   pill: { fontSize: '11px', padding: '2px 8px', borderRadius: '5px', background: 'var(--hover-bg)', color: T.muted, fontWeight: 500 },
-  emptyState: { padding: '48px 0', textAlign: 'center', color: T.subtle, fontSize: '13px' },
-  dragHandle: { color: '#c8c7c3', fontSize: '13px', lineHeight: 1, flexShrink: 0, userSelect: 'none', padding: '4px', margin: '-4px 2px -4px -4px' },
+  dragHandle: { color: T.subtle, fontSize: '13px', lineHeight: 1, flexShrink: 0, userSelect: 'none', padding: '4px', margin: '-4px 2px -4px -4px' },
 }
 
-function tabStyle(active) {
-  return {
-    padding: '10px 14px', fontSize: '13px',
-    fontWeight: active ? 600 : 400,
-    color: active ? T.brand : T.muted,
-    background: 'none', border: 'none',
-    borderBottom: active ? `2px solid ${T.brand}` : '2px solid transparent',
-    cursor: 'pointer', fontFamily: 'inherit', marginBottom: '-1px',
-    whiteSpace: 'nowrap', flexShrink: 0,
-    transition: 'color 0.12s ease, border-color 0.12s ease',
-  }
-}
 
 export default function Admin({ session, userProfile, initialTab, onBack, onNavigate, onStartOnboarding, onViewOnboarding }) {
   const [roles, setRoles] = useState([])
@@ -93,6 +81,10 @@ export default function Admin({ session, userProfile, initialTab, onBack, onNavi
   const [subDropTarget, setSubDropTarget] = useState(null)
   const [flashTemplateId, setFlashTemplateId] = useState(null)
   const flashTemplateTimer = useRef(null)
+  // Which lists have finished their first load, so an empty state isn't
+  // flashed ("No documents yet") while the request is still in flight.
+  const [loaded, setLoaded] = useState({})
+  const markLoaded = key => setLoaded(prev => (prev[key] ? prev : { ...prev, [key]: true }))
 
   // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchRoles is stable, mount-only fetch
   useEffect(() => { fetchRoles() }, [])
@@ -115,6 +107,13 @@ export default function Admin({ session, userProfile, initialTab, onBack, onNavi
 
   useEffect(() => () => clearTimeout(flashTemplateTimer.current), [])
 
+  // Open the templates page on the first role rather than an empty panel.
+  useEffect(() => {
+    if (initialTab !== 'templates' || selectedRole || roles.length === 0) return
+    const first = BRAND_CODES.flatMap(b => roles.filter(r => r.brand === b))[0] || roles[0]
+    setSelectedRole(first)
+  }, [initialTab, roles, selectedRole])
+
   // Native HTML5 drag doesn't auto-scroll the window in every browser, and a
   // role's task list can be long — nudge the viewport when the drag pointer
   // nears the top or bottom edge.
@@ -132,38 +131,47 @@ export default function Admin({ session, userProfile, initialTab, onBack, onNavi
   }, [draggingTaskId, draggingSubtaskId])
 
   async function fetchRoles() {
-    const { data } = await supabase.from('roles').select('*').order('name')
+    const { data, error } = await supabase.from('roles').select('*').order('name')
+    if (error) showToast(handleSupabaseError(error, 'Failed to load roles.'), 'error')
     if (data) setRoles(data)
+    markLoaded('roles')
   }
 
   async function fetchTemplates(roleId) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('onboarding_templates')
       .select('*')
       .eq('role_id', roleId)
       .order('phase')
       .order('sort_order')
       .order('task_name')
+    if (error) showToast(handleSupabaseError(error, 'Failed to load tasks.'), 'error')
     if (data) setTemplates(data)
   }
 
   async function fetchDocuments() {
-    const { data } = await supabase.from('documents').select('*').eq('is_company_resource', false).order('uploaded_at', { ascending: false })
+    const { data, error } = await supabase.from('documents').select('*').eq('is_company_resource', false).order('uploaded_at', { ascending: false })
+    if (error) showToast(handleSupabaseError(error, 'Failed to load documents.'), 'error')
     if (data) setDocuments(data)
+    markLoaded('documents')
   }
 
   async function fetchCompanyResources() {
-    const { data } = await supabase.from('documents').select('*').eq('is_company_resource', true).order('uploaded_at', { ascending: false })
+    const { data, error } = await supabase.from('documents').select('*').eq('is_company_resource', true).order('uploaded_at', { ascending: false })
+    if (error) showToast(handleSupabaseError(error, 'Failed to load company resources.'), 'error')
     if (data) setCompanyResources(data)
+    markLoaded('resources')
   }
 
   async function fetchHistory() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('onboarding_instances')
       .select('id, status, started_at, employees (full_name, email, hire_date, roles (name))')
       .in('status', [ONBOARDING_STATUS.COMPLETED, ONBOARDING_STATUS.ARCHIVED])
       .order('started_at', { ascending: false })
-    if (data) setHistory(data)
+    if (error) showToast(handleSupabaseError(error, 'Failed to load history.'), 'error')
+    if (data) setHistory(data.filter(h => h.employees))
+    markLoaded('history')
   }
 
   async function fetchTaskLibrary() {
@@ -613,144 +621,156 @@ async function handleAdminDocumentUpload(e) {
     if (role) onStartOnboarding(role)
   }
 
-  const p = isMobile ? '16px' : '40px'
+  const px = isMobile ? '16px' : '40px'
+  const contentStyle = { padding: isMobile ? '20px 16px 40px' : '28px 40px 48px', maxWidth: '820px' }
+  const card = { background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radiusLg, boxShadow: T.shadowSm }
+  const groupLabel = { ...BASE_STYLES.phaseLabel, marginTop: '28px' }
+  const listSkeleton = (
+    <div aria-busy="true" aria-label="Loading">
+      {[1, 2, 3, 4].map(i => (
+        <div key={i} style={{ ...BASE_STYLES.row, padding: '16px 0' }}>
+          <SkeletonLine width={`${40 + i * 8}%`} />
+        </div>
+      ))}
+    </div>
+  )
 
-  const styles = {
-    ...BASE_STYLES,
-    header: { padding: isMobile ? '16px 16px 12px' : '28px 40px 24px', boxShadow: `0 1px 0 ${T.border}`, background: T.surface },
-    content: { padding: isMobile ? '20px 16px' : '32px 40px', maxWidth: '780px' },
-    card: { background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radiusLg, padding: isMobile ? '20px 16px' : '28px', maxWidth: '420px', boxShadow: '0 1px 4px rgba(0,0,0,0.05), 0 2px 12px rgba(0,0,0,0.04)' },
-  }
+  const ADMIN_TABS = [
+    { id: 'history', label: 'History' },
+    { id: 'templates', label: 'Task templates' },
+    { id: 'documents', label: 'Documents' },
+    { id: 'company-resources', label: 'Company resources' },
+    { id: 'roles', label: 'Roles' },
+  ]
 
-  function renderHeader(title, sub) {
+  function renderAdminHeader(title, subtitle, actions) {
     return (
-      <div className="il-header" style={styles.header}>
-        <div style={styles.title}>{title}</div>
-        {sub && <div style={styles.sub}>{sub}</div>}
-      </div>
+      <PageHeader
+        title={title}
+        subtitle={isMobile ? null : subtitle}
+        actions={actions}
+        tabs={{ mode: 'nav', label: 'Admin sections', items: ADMIN_TABS, value: initialTab, onChange: onNavigate }}
+      />
     )
   }
 
-function renderAdminHeader(title, sub) {
-  const tabs = [
-    { id: 'history', label: 'History' },
-    { id: 'templates', label: 'Task templates' },
-    { id: 'documents', label: 'My Documents' },
-    { id: 'company-resources', label: 'Company Resources' },
-    { id: 'roles', label: 'Roles' },
-  ]
-  return (
-    <div className="il-header" style={{ boxShadow: '0 1px 0 var(--border)', background: 'var(--surface)' }}>
-      <div style={{ padding: isMobile ? '16px 16px 12px' : '28px 40px 20px' }}>
-        <div style={styles.title}>{title}</div>
-        {sub && <div style={styles.sub}>{sub}</div>}
-      </div>
-      <div style={{ display: 'flex', padding: `0 ${p}`, overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
-        {tabs.map(tab => (
-          <button key={tab.id} style={tabStyle(initialTab === tab.id)} onClick={() => onNavigate(tab.id)}>
-            {tab.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  )
-}
+  function renderModal() {
+    return (
+      <>
+        {modal && (
+          <ConfirmModal
+            title={modal.title}
+            message={modal.message}
+            confirmLabel={modal.confirmLabel}
+            confirmDanger={modal.confirmDanger}
+            onConfirm={modal.onConfirm}
+            onCancel={() => setModal(null)}
+          />
+        )}
+        {toast && <Toast key={toast.id} message={toast.message} type={toast.type} onClose={hideToast} />}
+      </>
+    )
+  }
 
-function renderModal() {
-  return (
-    <>
-      {modal && (
-        <ConfirmModal
-          title={modal.title}
-          message={modal.message}
-          confirmLabel={modal.confirmLabel}
-          confirmDanger={modal.confirmDanger}
-          onConfirm={modal.onConfirm}
-          onCancel={() => setModal(null)}
-        />
-      )}
-      {toast && <Toast key={toast.id} message={toast.message} type={toast.type} onClose={hideToast} />}
-    </>
-  )
-}
-
+  // ── START A NEW ONBOARDING: pick agency, then role ──
   if (initialTab === 'new-onboarding-select') {
     const brandRoles = pickedBrand ? roles.filter(r => r.brand === pickedBrand) : []
     return (
       <Layout session={session} userProfile={userProfile} currentPage="active" onNavigate={onNavigate}>
-        {renderHeader('Start new onboarding', 'Select the brand and role for this new employee.')}
-        <div style={styles.content}>
-          <div style={styles.card}>
-            <label style={styles.label}>Brand</label>
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
-              {['ISL', 'AS', 'ADS'].map(b => (
-                <button key={b} onClick={() => { setPickedBrand(b); setPickedRoleId('') }}
-                  style={{ flex: 1, padding: '10px', borderRadius: '7px', border: pickedBrand === b ? '1px solid #18181b' : '1px solid var(--border)', background: pickedBrand === b ? '#18181b' : '#fff', color: pickedBrand === b ? '#fff' : '#18181b', fontSize: '13px', fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
-                  {b}
+        <PageHeader title="Start a new onboarding" subtitle="Choose the agency and role. Their plan is built from that role’s task template." />
+        <div style={{ ...contentStyle, maxWidth: '720px' }}>
+          <div id="agency-label" style={{ fontSize: '13px', fontWeight: 600, color: T.text, marginBottom: '10px' }}>1. Agency</div>
+          <div role="radiogroup" aria-labelledby="agency-label" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '10px', marginBottom: '28px' }}>
+            {BRANDS.map(b => {
+              const active = pickedBrand === b.code
+              const count = roles.filter(r => r.brand === b.code).length
+              return (
+                <button key={b.code} type="button" role="radio" aria-checked={active}
+                  onClick={() => { setPickedBrand(b.code); setPickedRoleId('') }}
+                  className="il-lift"
+                  style={{
+                    textAlign: 'left', padding: '14px 16px', borderRadius: T.radiusMd, cursor: 'pointer', fontFamily: 'inherit',
+                    background: active ? T.brandLight : T.surface,
+                    border: `1.5px solid ${active ? T.brand : T.border}`,
+                    boxShadow: active ? 'none' : T.shadowSm,
+                  }}>
+                  <div style={{ fontSize: '14px', fontWeight: 600, color: active ? T.brand : T.text }}>{b.name}</div>
+                  <div style={{ fontSize: '12px', color: T.muted, marginTop: '3px' }}>
+                    {loaded.roles ? `${count} role${count === 1 ? '' : 's'}` : 'Loading…'}
+                  </div>
                 </button>
-              ))}
-            </div>
-            {pickedBrand && (
-              <>
-                <label style={styles.label}>Role</label>
-                <select style={{ ...styles.input, width: '100%', marginBottom: '20px' }} value={pickedRoleId} onChange={e => setPickedRoleId(e.target.value)}>
-                  <option value="">Select a role...</option>
-                  {brandRoles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                </select>
-                {brandRoles.length === 0 && (
-                  <div style={{ fontSize: '12px', color: 'var(--subtle)', marginBottom: '16px' }}>No roles exist for {pickedBrand} yet. Add roles from the Roles page.</div>
-                )}
-                <button style={styles.btnPrimary} onClick={handleStartSelected} disabled={!pickedRoleId}>Continue</button>
-              </>
-            )}
+              )
+            })}
           </div>
+
+          {pickedBrand && (
+            <div className="il-tab-content">
+              <div style={{ fontSize: '13px', fontWeight: 600, color: T.text, marginBottom: '10px' }}>2. Role</div>
+              {brandRoles.length === 0 ? (
+                <div style={{ ...card, padding: '16px 18px', fontSize: '13px', color: T.muted, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                  No roles exist for {brandName(pickedBrand)} yet.
+                  <Button size="sm" variant="secondary" onClick={() => onNavigate('roles')}>Add a role</Button>
+                </div>
+              ) : (
+                <form onSubmit={e => { e.preventDefault(); handleStartSelected() }} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                  <select className="il-input" aria-label="Role" style={{ flex: '1 1 260px', width: 'auto' }} value={pickedRoleId} onChange={e => setPickedRoleId(e.target.value)} autoFocus>
+                    <option value="">Select a role…</option>
+                    {brandRoles.map(r => <option key={r.id} value={r.id}>{r.name}{templateCounts[r.id] != null ? ` · ${templateCounts[r.id]} tasks` : ''}</option>)}
+                  </select>
+                  <Button type="submit" disabled={!pickedRoleId}>Continue</Button>
+                </form>
+              )}
+            </div>
+          )}
         </div>
         {renderModal()}
       </Layout>
     )
   }
 
+  // ── HISTORY ──
   if (initialTab === 'history') {
     const filteredHistory = history.filter(h => historyFilter === 'all' || h.status === historyFilter)
+    const counts = { all: history.length, completed: history.filter(h => h.status === 'completed').length, archived: history.filter(h => h.status === 'archived').length }
     return (
       <Layout session={session} userProfile={userProfile} currentPage="history" onNavigate={onNavigate}>
-        {renderAdminHeader('History', '')}
-        <div style={styles.content}>
-          <div style={{ display: 'flex', gap: '6px', marginBottom: '20px' }}>
-            {['all', ONBOARDING_STATUS.COMPLETED, ONBOARDING_STATUS.ARCHIVED].map(f => (
-              <button key={f} onClick={() => setHistoryFilter(f)} style={{ fontSize: '12px', padding: '4px 12px', borderRadius: '5px', border: '1px solid ' + (historyFilter === f ? '#18181b' : '#e2e1dd'), background: historyFilter === f ? '#18181b' : '#fff', color: historyFilter === f ? '#fff' : '#70706b', cursor: 'pointer', fontFamily: 'inherit', fontWeight: historyFilter === f ? 500 : 400 }}>
-                {f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1)}
-              </button>
-            ))}
+        {renderAdminHeader('History', 'Completed and archived onboardings.')}
+        <div style={contentStyle}>
+          <div style={{ marginBottom: '16px' }}>
+            <Segmented size="sm" label="Filter history" value={historyFilter} onChange={setHistoryFilter} options={[
+              { value: 'all', label: `All${loaded.history ? ` (${counts.all})` : ''}` },
+              { value: ONBOARDING_STATUS.COMPLETED, label: `Completed${loaded.history ? ` (${counts.completed})` : ''}` },
+              { value: ONBOARDING_STATUS.ARCHIVED, label: `Archived${loaded.history ? ` (${counts.archived})` : ''}` },
+            ]} />
           </div>
-          {filteredHistory.length === 0 ? (
-            <div style={styles.emptyState}>No {historyFilter === 'all' ? 'completed or archived' : historyFilter} onboardings yet.</div>
+          {!loaded.history ? listSkeleton : filteredHistory.length === 0 ? (
+            <EmptyState icon={EmptyIcons.check} title={historyFilter === 'all' ? 'Nothing here yet' : `No ${historyFilter} onboardings`}
+              message="When an onboarding is marked complete or archived, it moves here." />
           ) : filteredHistory.map(h => (
-            <div key={h.id} style={{ ...styles.row, cursor: 'default' }}>
-              <div style={{ cursor: 'pointer', flex: 1 }} onClick={() => onViewOnboarding(h.id)}>
-                <div style={styles.rowName}>{h.employees.full_name}</div>
-                <div style={styles.rowMuted}>{h.employees.roles?.name || 'Role removed'} · Started {formatDate(h.employees.hire_date, { month: 'short', day: 'numeric', year: 'numeric' })}</div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                <span style={styles.pill}>{h.status}</span>
-                <button style={{ ...styles.btnGhost, color: 'var(--brand)', fontSize: '12px' }}
-                  onClick={() => setModal({
-                    title: 'Reactivate onboarding',
-                    message: `This will move ${h.employees.full_name}'s onboarding back to active. Any previously completed tasks will remain checked off.`,
-                    confirmLabel: 'Reactivate',
-                    confirmDanger: false,
-                    onConfirm: async () => {
-                      const { error } = await supabase.from('onboarding_instances').update({ status: ONBOARDING_STATUS.ACTIVE }).eq('id', h.id)
-                      if (error) { showToast(handleSupabaseError(error, 'Failed to reactivate.'), 'error'); setModal(null); return }
-                      showToast('Onboarding reactivated')
-                      await logAudit('onboarding_reactivated', 'onboarding_instance', h.id, { employee_name: h.employees.full_name })
-                      setModal(null)
-                      fetchHistory()
-                    }
-                  })}>
-                  Reactivate
-                </button>
-              </div>
+            <div key={h.id} className="il-task-row" style={{ ...BASE_STYLES.row, gap: '12px' }}>
+              <button type="button" onClick={() => onViewOnboarding(h.id)} className="il-link-subtle"
+                style={{ flex: 1, minWidth: 0, textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit', color: 'inherit' }}>
+                <div style={BASE_STYLES.rowName}>{h.employees.full_name}</div>
+                <div style={BASE_STYLES.rowMuted}>{h.employees.roles?.name || 'Role removed'} · Started {formatDate(h.employees.hire_date, { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+              </button>
+              <span style={{ ...BASE_STYLES.pill, background: h.status === 'completed' ? T.successBg : T.hoverBg, color: h.status === 'completed' ? T.success : T.muted }}>{humanize(h.status)}</span>
+              <span className="il-row-actions"><Button variant="ghost" size="xs"
+                onClick={() => setModal({
+                  title: 'Reactivate onboarding',
+                  message: `This moves ${h.employees.full_name}'s onboarding back to active. Tasks already checked off stay checked.`,
+                  confirmLabel: 'Reactivate',
+                  confirmDanger: false,
+                  onConfirm: async () => {
+                    const { error } = await supabase.from('onboarding_instances').update({ status: ONBOARDING_STATUS.ACTIVE }).eq('id', h.id)
+                    if (error) { showToast(handleSupabaseError(error, 'Failed to reactivate.'), 'error'); setModal(null); return }
+                    showToast('Onboarding reactivated')
+                    await logAudit('onboarding_reactivated', 'onboarding_instance', h.id, { employee_name: h.employees.full_name })
+                    setModal(null)
+                    fetchHistory()
+                  }
+                })}>
+                Reactivate
+              </Button></span>
             </div>
           ))}
         </div>
@@ -759,34 +779,38 @@ function renderModal() {
     )
   }
 
+  // ── ROLES ──
   if (initialTab === 'roles') {
     return (
       <Layout session={session} userProfile={userProfile} currentPage="roles" onNavigate={onNavigate}>
-        {renderAdminHeader('Roles', '')}
-        <div style={styles.content}>
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
-            <input style={{ ...styles.input, flex: 1 }} placeholder="New role name" value={newRoleName}
-              onChange={e => setNewRoleName(e.target.value)} onKeyDown={e => e.key === 'Enter' && addRole()} />
-            <select style={styles.input} value={newRoleBrand} onChange={e => setNewRoleBrand(e.target.value)}>
-              <option value="ISL">ISL</option>
-              <option value="AS">AS</option>
-              <option value="ADS">ADS</option>
+        {renderAdminHeader('Roles', 'The job roles each agency hires for. Each role has its own task template.')}
+        <div style={contentStyle}>
+          <form onSubmit={e => { e.preventDefault(); addRole() }} style={{ ...card, padding: '16px', display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+            <input className="il-input" style={{ flex: '1 1 200px', width: 'auto' }} placeholder="New role name, e.g. Payroll Specialist" aria-label="New role name"
+              value={newRoleName} onChange={e => setNewRoleName(e.target.value)} />
+            <select className="il-input" style={{ width: 'auto' }} aria-label="Agency" value={newRoleBrand} onChange={e => setNewRoleBrand(e.target.value)}>
+              {BRANDS.map(b => <option key={b.code} value={b.code}>{b.name}</option>)}
             </select>
-            <button style={styles.btnPrimary} onClick={addRole}>Add role</button>
-          </div>
-          {['ISL', 'AS', 'ADS'].map(brand => {
-            const brandRoles = roles.filter(r => r.brand === brand)
+            <Button type="submit" disabled={!newRoleName.trim()}>Add role</Button>
+          </form>
+          {!loaded.roles ? listSkeleton : roles.length === 0 ? (
+            <EmptyState icon={EmptyIcons.people} title="No roles yet" message="Add the first role above, then give it a task template." />
+          ) : BRANDS.map(brand => {
+            const brandRoles = roles.filter(r => r.brand === brand.code)
             if (brandRoles.length === 0) return null
             return (
-              <div key={brand}>
-                <div style={styles.phaseLabel}>{brand}</div>
+              <section key={brand.code} aria-label={brand.name}>
+                <h2 style={groupLabel}>{brand.name}</h2>
                 {brandRoles.map(r => (
-                  <div key={r.id} style={styles.row}>
-                    <span style={styles.rowName}>{r.name}</span>
-                    <button style={styles.btnGhost} onClick={() => deleteRole(r.id, r.name)}>Remove</button>
+                  <div key={r.id} className="il-task-row" style={BASE_STYLES.row}>
+                    <span style={BASE_STYLES.rowName}>{r.name}</span>
+                    <span className="il-row-actions" style={{ display: 'flex', gap: '4px' }}>
+                      <Button variant="ghost" size="xs" onClick={() => { setSelectedRole(r); onNavigate('templates') }}>Edit tasks</Button>
+                      <Button variant="ghost" size="xs" style={{ color: T.danger }} onClick={() => deleteRole(r.id, r.name)} aria-label={`Delete ${r.name}`}>Delete</Button>
+                    </span>
                   </div>
                 ))}
-              </div>
+              </section>
             )
           })}
         </div>
@@ -795,275 +819,266 @@ function renderModal() {
     )
   }
 
+  // ── TASK TEMPLATES ──
   if (initialTab === 'templates') {
+    const dropOutline = (active) => active ? `2px dashed ${T.brand}` : (draggingTaskId ? `1px dashed ${T.border}` : 'none')
     return (
       <Layout session={session} userProfile={userProfile} currentPage="templates" onNavigate={onNavigate}>
-        {renderAdminHeader('Task templates', '')}
+        {renderAdminHeader('Task templates', 'The default plan every new hire in a role starts with.',
+          <Button size="sm" variant="secondary" onClick={() => setLibraryOpen(true)}>
+            Task library <span style={{ color: T.subtle }}>({taskLibrary.length})</span>
+          </Button>
+        )}
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', padding: isMobile ? '10px 16px' : '12px 40px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--surface)' }}>
-          <button
-            onClick={() => setLibraryOpen(true)}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--brand)', background: 'none', border: '1px solid var(--border)', borderRadius: '6px', padding: '5px 12px', cursor: 'pointer', fontFamily: 'inherit' }}>
-            Manage task library
-            <span style={{ color: 'var(--subtle)' }}>({taskLibrary.length})</span>
-          </button>
-        </div>
+        <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', minHeight: isMobile ? undefined : 'calc(100vh - 150px)' }}>
 
-        <div style={{ display: 'flex', minHeight: 'calc(100vh - 182px)' }}>
-
-          {/* Left panel: role list */}
-          <div style={{ width: isMobile ? '140px' : '200px', flexShrink: 0, borderRight: '1px solid var(--border)', overflowY: 'auto', padding: '12px 0' }}>
-            {['ISL', 'AS', 'ADS'].map(brand => {
-              const brandRoles = roles.filter(r => r.brand === brand)
+          {/* Role list */}
+          <nav aria-label="Roles" style={isMobile
+            ? { padding: '12px 16px', borderBottom: `1px solid ${T.border}` }
+            : { width: '220px', flexShrink: 0, borderRight: `1px solid ${T.border}`, overflowY: 'auto', padding: '12px 0' }}>
+            {isMobile ? (
+              <select className="il-input" aria-label="Role" value={selectedRole?.id || ''} onChange={e => { const r = roles.find(x => x.id === e.target.value); if (r) { setSelectedRole(r); setAddingTaskToPhase(null); setBulkMode(false) } }}>
+                {BRANDS.map(b => {
+                  const brandRoles = roles.filter(r => r.brand === b.code)
+                  return brandRoles.length ? <optgroup key={b.code} label={b.name}>{brandRoles.map(r => <option key={r.id} value={r.id}>{r.name} ({templateCounts[r.id] || 0} tasks)</option>)}</optgroup> : null
+                })}
+              </select>
+            ) : BRANDS.map(brand => {
+              const brandRoles = roles.filter(r => r.brand === brand.code)
               if (brandRoles.length === 0) return null
               return (
-                <div key={brand}>
-                  <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--subtle)', textTransform: 'uppercase', letterSpacing: '0.4px', padding: '10px 16px 4px' }}>{brand}</div>
+                <div key={brand.code}>
+                  <div style={{ fontSize: '10px', fontWeight: 600, color: T.subtle, textTransform: 'uppercase', letterSpacing: '0.4px', padding: '12px 16px 4px' }}>{brand.name}</div>
                   {brandRoles.map(r => {
                     const active = selectedRole?.id === r.id
                     return (
-                      <button key={r.id}
+                      <button key={r.id} type="button" aria-current={active ? 'true' : undefined}
                         className={`il-role-item${active ? ' il-active' : ''}`}
                         onClick={() => { setSelectedRole(r); setAddingTaskToPhase(null); setBulkMode(false) }}
-                        style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 16px', border: 'none', background: active ? 'var(--hover-bg)' : 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}>
-                        <div style={{ fontSize: '13px', fontWeight: active ? 500 : 400, color: 'var(--text)', letterSpacing: '-0.1px' }}>{r.name}</div>
-                        <div style={{ fontSize: '11px', color: 'var(--subtle)', marginTop: '1px' }}>{templateCounts[r.id] || 0} tasks</div>
+                        style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 16px', border: 'none', borderLeft: `2px solid ${active ? T.brand : 'transparent'}`, background: active ? T.hoverBg : 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}>
+                        <div style={{ fontSize: '13px', fontWeight: active ? 600 : 400, color: T.text, letterSpacing: '-0.1px' }}>{r.name}</div>
+                        <div style={{ fontSize: '11px', color: T.subtle, marginTop: '1px' }}>{templateCounts[r.id] || 0} tasks</div>
                       </button>
                     )
                   })}
                 </div>
               )
             })}
-            {roles.length === 0 && (
-              <div style={{ padding: '16px', fontSize: '12px', color: 'var(--subtle)' }}>
-                No roles.{' '}
-                <button onClick={() => onNavigate('roles')} style={{ color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: '12px', padding: 0 }}>Add roles</button>
+            {loaded.roles && roles.length === 0 && (
+              <div style={{ padding: '16px', fontSize: '12px', color: T.subtle }}>
+                No roles yet. <Button variant="link" size="sm" onClick={() => onNavigate('roles')}>Add roles</Button>
               </div>
             )}
-          </div>
+          </nav>
 
-          {/* Right panel: task editor */}
-          <div style={{ flex: 1, minWidth: 0, overflowY: 'auto' }}>
+          {/* Task editor */}
+          <div style={{ flex: 1, minWidth: 0 }}>
             {!selectedRole ? (
-              <div style={{ padding: '40px', color: 'var(--subtle)', fontSize: '13px' }}>Select a role to manage its tasks.</div>
+              loaded.roles ? <EmptyState icon={EmptyIcons.list} title="Pick a role" message="Choose a role to see and edit its task template." /> : <div style={{ padding: '24px 32px' }}>{listSkeleton}</div>
             ) : (
               <>
-                {/* Role header */}
-                <div style={{ padding: '20px 32px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)' }}>
-                  <div>
-                    <span style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text)', letterSpacing: '-0.2px' }}>{selectedRole.name}</span>
-                    <span style={{ fontSize: '12px', color: 'var(--subtle)', marginLeft: '8px' }}>{selectedRole.brand} · {templateCounts[selectedRole.id] || 0} tasks</span>
+                <div style={{ padding: isMobile ? '14px 16px' : '18px 32px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', borderBottom: `1px solid ${T.borderSubtle}`, flexWrap: 'wrap' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <h2 style={{ ...T.type.h2, fontSize: '15px', margin: 0, color: T.text }}>{selectedRole.name}</h2>
+                    <div style={{ fontSize: '12px', color: T.subtle, marginTop: '2px' }}>{brandName(selectedRole.brand)} · {templateCounts[selectedRole.id] || 0} tasks</div>
                   </div>
-                  <button
-                    onClick={() => { setBulkMode(v => !v); setAddingTaskToPhase(null) }}
-                    style={{ fontSize: '12px', color: bulkMode ? '#70706b' : '#0066cc', background: 'none', border: '1px solid ' + (bulkMode ? '#c8c7c3' : 'transparent'), borderRadius: '5px', padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit' }}>
-                    {bulkMode ? 'Cancel' : 'Bulk add'}
-                  </button>
+                  <Button size="sm" variant={bulkMode ? 'ghost' : 'secondary'} onClick={() => { setBulkMode(v => !v); setAddingTaskToPhase(null) }}>
+                    {bulkMode ? 'Cancel bulk add' : 'Bulk add'}
+                  </Button>
                 </div>
 
-                <div style={{ padding: '20px 32px', maxWidth: '640px' }}>
+                <div style={{ padding: isMobile ? '16px' : '20px 32px 48px', maxWidth: '680px' }}>
 
                   {/* Shared suggestion list for the task/subtask add fields. */}
                   <datalist id="tpl-task-library">
                     {taskLibrary.map(tl => <option key={tl.id} value={tl.task_name} />)}
                   </datalist>
 
-                  {!bulkMode && templates.some(t => !t.parent_id) && (
-                    <div style={{ fontSize: '11px', color: 'var(--subtle)', marginBottom: '4px' }}>
-                      Drag the ⠿ handle to reorder tasks within a day, move them to another day, or reorder a task's subtasks. This order is the default for every new {selectedRole.name}.
+                  {!bulkMode && !isMobile && templates.some(t => !t.parent_id) && (
+                    <div style={{ fontSize: '12px', color: T.muted, marginBottom: '8px', lineHeight: 1.5 }}>
+                      Drag <span aria-hidden="true">⠿</span> to reorder tasks, move them to another day, or reorder subtasks. This order is the default for every new {selectedRole.name}.
                     </div>
                   )}
 
-                  {/* Bulk add */}
                   {bulkMode && (
-                    <div style={{ background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: '8px', padding: '16px', marginBottom: '24px' }}>
-                      <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text)', marginBottom: '4px' }}>Bulk add tasks</div>
-                      <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '10px' }}>One task name per line</div>
-                      <textarea
-                        autoFocus
-                        style={{ width: '100%', height: '110px', resize: 'vertical', border: '1px solid var(--border)', borderRadius: '6px', padding: '8px 10px', fontSize: '13px', fontFamily: 'inherit', color: 'var(--text)', outline: 'none', boxSizing: 'border-box', background: 'var(--surface)' }}
+                    <form onSubmit={e => { e.preventDefault(); addBulkTasks() }} className="il-tab-content" style={{ ...card, padding: '16px', marginBottom: '24px' }}>
+                      <label htmlFor="bulk-tasks" style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: T.text }}>Bulk add tasks</label>
+                      <div style={{ fontSize: '12px', color: T.muted, margin: '2px 0 10px' }}>One task per line. They’re added to the day and owner you pick below.</div>
+                      <textarea id="bulk-tasks" className="il-input" autoFocus style={{ height: '120px' }}
                         placeholder={'Complete tax forms\nSet up laptop\nMeet with manager'}
-                        value={bulkText}
-                        onChange={e => setBulkText(e.target.value)}
-                      />
+                        value={bulkText} onChange={e => setBulkText(e.target.value)} />
                       <div style={{ display: 'flex', gap: '8px', marginTop: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-                        <select style={styles.input} value={bulkPhase} onChange={e => setBulkPhase(e.target.value)}>
+                        <select className="il-input" style={{ width: 'auto' }} aria-label="Day" value={bulkPhase} onChange={e => setBulkPhase(e.target.value)}>
                           {PHASES.map(ph => <option key={ph}>{ph}</option>)}
                         </select>
-                        <select style={styles.input} value={bulkOwner} onChange={e => setBulkOwner(e.target.value)}>
+                        <select className="il-input" style={{ width: 'auto' }} aria-label="Owner" value={bulkOwner} onChange={e => setBulkOwner(e.target.value)}>
                           {OWNERS.map(o => <option key={o}>{o}</option>)}
                         </select>
-                        <button style={{ ...styles.btnPrimary, opacity: !bulkText.trim() ? 0.5 : 1 }} disabled={!bulkText.trim()} onClick={addBulkTasks}>
+                        <Button type="submit" disabled={!bulkText.trim()}>
                           Add {bulkText.split('\n').filter(l => l.trim()).length || ''} tasks
-                        </button>
+                        </Button>
                       </div>
-                    </div>
+                    </form>
                   )}
 
-                  {/* Schedule buckets, grouped by week */}
                   {BUCKET_SECTIONS.map(section => {
                     const showHeading = section.buckets.length > 1 || section.label !== section.buckets[0]
                     return (
-                    <div key={section.label}>
-                      {showHeading && <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.6px', margin: '18px 0 6px' }}>{section.label}</div>}
-                      {section.buckets.map(phase => {
-                    const phaseTasks = templates.filter(t => t.phase === phase && !t.parent_id).sort(sortTemplates)
-                    const isAddingToThis = addingTaskToPhase === phase
-                    const isPhaseDropTarget = draggingTaskId && tplDropTarget && tplDropTarget.phase === phase
-                    return (
-                      <div key={phase}
-                        onDragOver={e => handlePhaseDragOver(e, phase)}
-                        onDrop={e => handlePhaseDrop(e, phase)}
-                        style={{
-                          marginBottom: '28px', borderRadius: '8px',
-                          // While a drag is in flight, faintly outline every day so all
-                          // valid drop zones are visible; the hovered one gets the bold cue.
-                          outline: isPhaseDropTarget ? '2px dashed #0066cc' : draggingTaskId ? '1px dashed #d8d7d3' : 'none',
-                          outlineOffset: '2px',
-                          background: isPhaseDropTarget ? '#f7fbff' : 'transparent',
-                          transition: 'background 0.12s',
-                        }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '8px' }}>
-                          <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--subtle)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>{phase}</span>
-                          {phaseTasks.length > 0 && <span style={{ fontSize: '11px', color: '#c8c7c3' }}>{phaseTasks.length}</span>}
-                        </div>
-
-                        {phaseTasks.length === 0 && !isAddingToThis && (
-                          <div style={{ fontSize: '12px', color: '#c8c7c3', paddingBottom: '6px' }}>{draggingTaskId ? 'Drop here' : 'No tasks'}</div>
-                        )}
-
-                        {phaseTasks.map((t, idx) => {
-                          const subtasks = templates.filter(s => s.parent_id === t.id).sort(sortTemplates)
-                          const isDragging = draggingTaskId === t.id
-                          const isEditingThis = editingTask === t.id
-                          const showInsertLine = draggingTaskId && draggingTaskId !== t.id && tplDropTarget && tplDropTarget.phase === phase && tplDropTarget.beforeId === t.id
+                      <div key={section.label}>
+                        {showHeading && <h3 style={{ fontSize: '11px', fontWeight: 700, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.6px', margin: '22px 0 6px' }}>{section.label}</h3>}
+                        {section.buckets.map(phase => {
+                          const phaseTasks = templates.filter(t => t.phase === phase && !t.parent_id).sort(sortTemplates)
+                          const isAddingToThis = addingTaskToPhase === phase
+                          const isPhaseDropTarget = draggingTaskId && tplDropTarget && tplDropTarget.phase === phase
                           return (
-                            <div key={t.id}>
-                              {showInsertLine && <div style={{ height: '2px', background: '#0066cc', borderRadius: '2px', margin: '0 6px' }} />}
-                              <div
-                                className={`il-row${flashTemplateId === t.id ? ' il-row-flash' : ''}`}
-                                draggable={!isEditingThis}
-                                onDragStart={e => handleTaskDragStart(e, t)}
-                                onDragEnd={handleTaskDragEnd}
-                                onDragOver={e => handleTaskRowDragOver(e, t, idx, phaseTasks)}
-                                style={{ ...styles.row, opacity: isDragging ? 0.4 : 1, background: isDragging ? '#f0f7ff' : undefined }}>
-                                {isEditingThis ? (
-                                  <div style={{ display: 'flex', gap: '8px', flex: 1, alignItems: 'center' }}>
-                                    <input style={{ ...styles.input, flex: 1 }} value={editingTaskName}
-                                      onChange={e => setEditingTaskName(e.target.value)}
-                                      onKeyDown={e => { if (e.key === 'Enter') saveTaskEdit(t.id); if (e.key === 'Escape') setEditingTask(null) }}
-                                      autoFocus />
-                                    <button style={styles.btnPrimary} onClick={() => saveTaskEdit(t.id)}>Save</button>
-                                    <button style={styles.btnGhost} onClick={() => setEditingTask(null)}>Cancel</button>
-                                  </div>
-                                ) : (
-                                  <>
-                                    <span className="il-drag-handle" style={styles.dragHandle} title="Drag to reorder or move to another day">⠿</span>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
-                                      <span style={styles.rowName}>{t.task_name}</span>
-                                      <span style={styles.pill}>{t.owner}</span>
-                                    </div>
-                                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexShrink: 0 }}>
-                                      <button style={{ ...styles.btnGhost, color: 'var(--brand)' }} onClick={() => { setEditingTask(t.id); setEditingTaskName(t.task_name) }}>Edit</button>
-                                      <button style={{ ...styles.btnGhost, color: 'var(--brand)' }} onClick={() => { setAddingSubtaskTo(addingSubtaskTo === t.id ? null : t.id); setNewSubtaskName('') }}>+ Subtask</button>
-                                      <button style={styles.btnGhost} onClick={() => deleteTask(t.id, t.task_name)}>Remove</button>
-                                    </div>
-                                  </>
+                            <section key={phase} aria-label={phase}
+                              onDragOver={e => handlePhaseDragOver(e, phase)}
+                              onDrop={e => handlePhaseDrop(e, phase)}
+                              style={{
+                                marginBottom: '14px', borderRadius: T.radiusMd,
+                                // While a drag is in flight, faintly outline every day so all
+                                // valid drop zones are visible; the hovered one gets the bold cue.
+                                outline: dropOutline(isPhaseDropTarget), outlineOffset: '2px',
+                                background: isPhaseDropTarget ? T.brandLight : 'transparent',
+                                transition: 'background 0.12s',
+                              }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minHeight: '32px', borderBottom: `1px solid ${T.borderSubtle}` }}>
+                                <span style={{ fontSize: '12px', fontWeight: 600, color: T.text }}>{phase}</span>
+                                {phaseTasks.length > 0
+                                  ? <span className="il-tabular" style={{ fontSize: '11px', color: T.subtle }}>{phaseTasks.length}</span>
+                                  : !isAddingToThis && <span style={{ fontSize: '11px', color: T.subtle, fontStyle: 'italic' }}>{draggingTaskId ? 'Drop here' : 'No tasks'}</span>}
+                                {!bulkMode && !isAddingToThis && (
+                                  <Button variant="link" size="sm" style={{ marginLeft: 'auto' }} aria-label={`Add a task to ${phase}`}
+                                    onClick={() => { setAddingTaskToPhase(phase); setNewTaskName(''); setNewTaskOwner('HR') }}>
+                                    + Add
+                                  </Button>
                                 )}
                               </div>
 
-                              {subtasks.map((s, sIdx) => {
-                                const isSubDragging = draggingSubtaskId === s.id
-                                const isEditingSub = editingTask === s.id
-                                const showSubInsert = draggingSubtaskId && draggingSubtaskId !== s.id && subDropTarget && subDropTarget.parentId === t.id && subDropTarget.beforeId === s.id
+                              {phaseTasks.map((t, idx) => {
+                                const subtasks = templates.filter(s => s.parent_id === t.id).sort(sortTemplates)
+                                const isDragging = draggingTaskId === t.id
+                                const isEditingThis = editingTask === t.id
+                                const showInsertLine = draggingTaskId && draggingTaskId !== t.id && tplDropTarget && tplDropTarget.phase === phase && tplDropTarget.beforeId === t.id
                                 return (
-                                <div key={s.id}>
-                                  {showSubInsert && <div style={{ height: '2px', background: '#0066cc', borderRadius: '2px', margin: '0 6px 0 26px' }} />}
-                                  <div
-                                    className={`il-row${flashTemplateId === s.id ? ' il-row-flash' : ''}`}
-                                    draggable={!isEditingSub}
-                                    onDragStart={e => handleSubtaskDragStart(e, s)}
-                                    onDragEnd={handleSubtaskDragEnd}
-                                    onDragOver={e => handleSubtaskRowDragOver(e, s, sIdx, subtasks)}
-                                    onDrop={e => handleSubtaskDrop(e, t.id)}
-                                    style={{ ...styles.row, paddingLeft: '20px', background: isSubDragging ? '#f0f7ff' : 'var(--surface-raised)', opacity: isSubDragging ? 0.4 : 1 }}>
-                                  {isEditingSub ? (
-                                    <div style={{ display: 'flex', gap: '8px', flex: 1, alignItems: 'center' }}>
-                                      <input style={{ ...styles.input, flex: 1 }} value={editingTaskName}
-                                        onChange={e => setEditingTaskName(e.target.value)}
-                                        onKeyDown={e => { if (e.key === 'Enter') saveTaskEdit(s.id); if (e.key === 'Escape') setEditingTask(null) }}
-                                        autoFocus />
-                                      <button style={styles.btnPrimary} onClick={() => saveTaskEdit(s.id)}>Save</button>
-                                      <button style={styles.btnGhost} onClick={() => setEditingTask(null)}>Cancel</button>
+                                  <div key={t.id}>
+                                    {showInsertLine && <div style={{ height: '2px', background: T.brand, borderRadius: '2px', margin: '0 6px' }} />}
+                                    <div
+                                      className={`il-row il-task-row${flashTemplateId === t.id ? ' il-row-flash' : ''}`}
+                                      draggable={!isEditingThis && !isMobile}
+                                      onDragStart={e => handleTaskDragStart(e, t)}
+                                      onDragEnd={handleTaskDragEnd}
+                                      onDragOver={e => handleTaskRowDragOver(e, t, idx, phaseTasks)}
+                                      style={{ ...BASE_STYLES.row, gap: '8px', padding: '10px 4px', opacity: isDragging ? 0.45 : 1, background: isDragging ? T.brandLight : undefined }}>
+                                      {isEditingThis ? (
+                                        <form onSubmit={e => { e.preventDefault(); saveTaskEdit(t.id) }} style={{ display: 'flex', gap: '8px', flex: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                                          <input className="il-input" style={{ flex: '1 1 180px', width: 'auto' }} aria-label="Task name" value={editingTaskName}
+                                            onChange={e => setEditingTaskName(e.target.value)}
+                                            onKeyDown={e => { if (e.key === 'Escape') setEditingTask(null) }}
+                                            autoFocus />
+                                          <Button type="submit" size="sm">Save</Button>
+                                          <Button size="sm" variant="ghost" onClick={() => setEditingTask(null)}>Cancel</Button>
+                                        </form>
+                                      ) : (
+                                        <>
+                                          {!isMobile && <span className="il-drag-handle" style={BASE_STYLES.dragHandle} title="Drag to reorder or move to another day" aria-hidden="true">⠿</span>}
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0, flexWrap: 'wrap' }}>
+                                            <span style={BASE_STYLES.rowName}>{t.task_name}</span>
+                                            <span style={BASE_STYLES.pill}>{t.owner}</span>
+                                          </div>
+                                          <div className="il-row-actions" style={{ display: 'flex', gap: '2px', alignItems: 'center', flexShrink: 0 }}>
+                                            <Button variant="ghost" size="xs" onClick={() => { setEditingTask(t.id); setEditingTaskName(t.task_name) }} aria-label={`Rename ${t.task_name}`}>Edit</Button>
+                                            <Button variant="ghost" size="xs" onClick={() => { setAddingSubtaskTo(addingSubtaskTo === t.id ? null : t.id); setNewSubtaskName('') }} aria-label={`Add a subtask to ${t.task_name}`}>+ Subtask</Button>
+                                            <Button variant="ghost" size="xs" style={{ color: T.danger }} onClick={() => deleteTask(t.id, t.task_name)} aria-label={`Remove ${t.task_name}`}>Remove</Button>
+                                          </div>
+                                        </>
+                                      )}
                                     </div>
-                                  ) : (
-                                    <>
-                                      <span className="il-drag-handle" style={styles.dragHandle} title="Drag to reorder">⠿</span>
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
-                                        <span style={{ color: '#c8c7c3', fontSize: '12px' }}>↳</span>
-                                        <span style={{ ...styles.rowName, color: 'var(--muted)' }}>{s.task_name}</span>
-                                      </div>
-                                      <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexShrink: 0 }}>
-                                        <button style={{ ...styles.btnGhost, color: 'var(--brand)' }} onClick={() => { setEditingTask(s.id); setEditingTaskName(s.task_name) }}>Edit</button>
-                                        <button style={styles.btnGhost} onClick={() => deleteTask(s.id, s.task_name)}>Remove</button>
-                                      </div>
-                                    </>
-                                  )}
+
+                                    {subtasks.map((s, sIdx) => {
+                                      const isSubDragging = draggingSubtaskId === s.id
+                                      const isEditingSub = editingTask === s.id
+                                      const showSubInsert = draggingSubtaskId && draggingSubtaskId !== s.id && subDropTarget && subDropTarget.parentId === t.id && subDropTarget.beforeId === s.id
+                                      return (
+                                        <div key={s.id}>
+                                          {showSubInsert && <div style={{ height: '2px', background: T.brand, borderRadius: '2px', margin: '0 6px 0 26px' }} />}
+                                          <div
+                                            className={`il-row il-task-row${flashTemplateId === s.id ? ' il-row-flash' : ''}`}
+                                            draggable={!isEditingSub && !isMobile}
+                                            onDragStart={e => handleSubtaskDragStart(e, s)}
+                                            onDragEnd={handleSubtaskDragEnd}
+                                            onDragOver={e => handleSubtaskRowDragOver(e, s, sIdx, subtasks)}
+                                            onDrop={e => handleSubtaskDrop(e, t.id)}
+                                            style={{ ...BASE_STYLES.row, gap: '8px', padding: '8px 4px 8px 22px', background: isSubDragging ? T.brandLight : T.surfaceSunken, opacity: isSubDragging ? 0.45 : 1 }}>
+                                            {isEditingSub ? (
+                                              <form onSubmit={e => { e.preventDefault(); saveTaskEdit(s.id) }} style={{ display: 'flex', gap: '8px', flex: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                                                <input className="il-input" style={{ flex: '1 1 180px', width: 'auto' }} aria-label="Subtask name" value={editingTaskName}
+                                                  onChange={e => setEditingTaskName(e.target.value)}
+                                                  onKeyDown={e => { if (e.key === 'Escape') setEditingTask(null) }}
+                                                  autoFocus />
+                                                <Button type="submit" size="sm">Save</Button>
+                                                <Button size="sm" variant="ghost" onClick={() => setEditingTask(null)}>Cancel</Button>
+                                              </form>
+                                            ) : (
+                                              <>
+                                                {!isMobile && <span className="il-drag-handle" style={BASE_STYLES.dragHandle} title="Drag to reorder" aria-hidden="true">⠿</span>}
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
+                                                  <span aria-hidden="true" style={{ color: T.subtle, fontSize: '12px' }}>↳</span>
+                                                  <span style={{ ...BASE_STYLES.rowName, color: T.muted }}>{s.task_name}</span>
+                                                </div>
+                                                <div className="il-row-actions" style={{ display: 'flex', gap: '2px', alignItems: 'center', flexShrink: 0 }}>
+                                                  <Button variant="ghost" size="xs" onClick={() => { setEditingTask(s.id); setEditingTaskName(s.task_name) }} aria-label={`Rename ${s.task_name}`}>Edit</Button>
+                                                  <Button variant="ghost" size="xs" style={{ color: T.danger }} onClick={() => deleteTask(s.id, s.task_name)} aria-label={`Remove ${s.task_name}`}>Remove</Button>
+                                                </div>
+                                              </>
+                                            )}
+                                          </div>
+                                          {/* trailing insert line when appending to the end of this task's subtasks */}
+                                          {sIdx === subtasks.length - 1 && draggingSubtaskId && draggingSubtaskId !== s.id && subDropTarget && subDropTarget.parentId === t.id && subDropTarget.beforeId === null && (
+                                            <div style={{ height: '2px', background: T.brand, borderRadius: '2px', margin: '0 6px 0 26px' }} />
+                                          )}
+                                        </div>
+                                      )
+                                    })}
+
+                                    {addingSubtaskTo === t.id && (
+                                      <form onSubmit={e => { e.preventDefault(); addSubtask(t.id) }}
+                                        style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', padding: '8px 4px 12px 22px', background: T.surfaceSunken, borderBottom: `1px solid ${T.borderSubtle}` }}>
+                                        <input list="tpl-task-library" className="il-input" style={{ flex: '1 1 160px', width: 'auto' }} placeholder="Subtask name…" aria-label={`New subtask for ${t.task_name}`}
+                                          value={newSubtaskName} onChange={e => setNewSubtaskName(e.target.value)}
+                                          onKeyDown={e => { if (e.key === 'Escape') setAddingSubtaskTo(null) }} autoFocus />
+                                        <Button type="submit" size="sm" disabled={!newSubtaskName.trim()}>Add</Button>
+                                        <Button size="sm" variant="ghost" onClick={() => setAddingSubtaskTo(null)}>Cancel</Button>
+                                      </form>
+                                    )}
                                   </div>
-                                  {/* trailing insert line when appending to the end of this task's subtasks */}
-                                  {sIdx === subtasks.length - 1 && draggingSubtaskId && draggingSubtaskId !== s.id && subDropTarget && subDropTarget.parentId === t.id && subDropTarget.beforeId === null && (
-                                    <div style={{ height: '2px', background: '#0066cc', borderRadius: '2px', margin: '0 6px 0 26px' }} />
-                                  )}
-                                </div>
                                 )
                               })}
 
-                              {addingSubtaskTo === t.id && (
-                                <div style={{ paddingLeft: '20px', paddingTop: '8px', paddingBottom: '12px', background: 'var(--surface-raised)', borderBottom: '1px solid var(--border-subtle)' }}>
-                                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                                    <input list="tpl-task-library" style={{ ...styles.input, flex: 1, minWidth: '160px' }} placeholder="Type a subtask name…"
-                                      value={newSubtaskName} onChange={e => setNewSubtaskName(e.target.value)}
-                                      onKeyDown={e => e.key === 'Enter' && addSubtask(t.id)} autoFocus />
-                                    <button style={styles.btnPrimary} onClick={() => addSubtask(t.id)}>Add</button>
-                                    <button style={{ ...styles.btnGhost, padding: '0 8px' }} onClick={() => setAddingSubtaskTo(null)}>Cancel</button>
-                                  </div>
-                                </div>
+                              {/* trailing insert line when appending to the end of this day */}
+                              {draggingTaskId && tplDropTarget && tplDropTarget.phase === phase && tplDropTarget.beforeId === null && phaseTasks.length > 0 && (
+                                <div style={{ height: '2px', background: T.brand, borderRadius: '2px', margin: '0 6px' }} />
                               )}
-                            </div>
+
+                              {isAddingToThis && (
+                                <form onSubmit={e => { e.preventDefault(); addTask(phase) }} style={{ marginTop: '8px', padding: '12px', background: T.surfaceSunken, border: `1px solid ${T.border}`, borderRadius: T.radiusMd }}>
+                                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                                    <input list="tpl-task-library" className="il-input" style={{ flex: '1 1 180px', width: 'auto' }} placeholder="Type a task name…" aria-label={`New task for ${phase}`}
+                                      value={newTaskName} onChange={e => setNewTaskName(e.target.value)}
+                                      onKeyDown={e => { if (e.key === 'Escape') { setAddingTaskToPhase(null); setNewTaskName('') } }} autoFocus />
+                                    <select className="il-input" style={{ width: 'auto' }} aria-label="Owner" value={newTaskOwner} onChange={e => setNewTaskOwner(e.target.value)}>
+                                      {OWNERS.map(o => <option key={o}>{o}</option>)}
+                                    </select>
+                                    <Button type="submit" size="sm" disabled={!newTaskName.trim()}>Add</Button>
+                                    <Button size="sm" variant="ghost" onClick={() => { setAddingTaskToPhase(null); setNewTaskName('') }}>Cancel</Button>
+                                  </div>
+                                  <div style={{ ...BASE_STYLES.rowMuted, marginTop: '6px' }}>Type a new task, or pick a saved one from the suggestions.</div>
+                                </form>
+                              )}
+                            </section>
                           )
                         })}
-
-                        {/* trailing insert line when appending to the end of this day */}
-                        {draggingTaskId && tplDropTarget && tplDropTarget.phase === phase && tplDropTarget.beforeId === null && phaseTasks.length > 0 && (
-                          <div style={{ height: '2px', background: '#0066cc', borderRadius: '2px', margin: '0 6px' }} />
-                        )}
-
-                        {/* Per-phase add */}
-                        {isAddingToThis ? (
-                          <div style={{ marginTop: '8px', padding: '12px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: '7px' }}>
-                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-                              <input list="tpl-task-library" style={{ ...styles.input, flex: 1, minWidth: '180px' }} placeholder="Type a task name…"
-                                value={newTaskName} onChange={e => setNewTaskName(e.target.value)}
-                                onKeyDown={e => e.key === 'Enter' && addTask(phase)} autoFocus />
-                              <select style={styles.input} value={newTaskOwner} onChange={e => setNewTaskOwner(e.target.value)}>
-                                {OWNERS.map(o => <option key={o}>{o}</option>)}
-                              </select>
-                              <button style={styles.btnPrimary} onClick={() => addTask(phase)}>Add</button>
-                              <button style={{ ...styles.btnGhost, padding: '0 8px' }} onClick={() => { setAddingTaskToPhase(null); setNewTaskName('') }}>Cancel</button>
-                            </div>
-                            <div style={{ ...styles.rowMuted, marginTop: '6px' }}>Just start typing to add a custom task, or pick a saved one from the suggestions.</div>
-                          </div>
-                        ) : !bulkMode && (
-                          <button
-                            onClick={() => { setAddingTaskToPhase(phase); setNewTaskName(''); setNewTaskOwner('HR') }}
-                            style={{ fontSize: '12px', color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', padding: '6px 0', fontFamily: 'inherit', display: 'block' }}>
-                            + Add task
-                          </button>
-                        )}
                       </div>
-                    )
-                      })}
-                    </div>
                     )
                   })}
                 </div>
@@ -1075,25 +1090,27 @@ function renderModal() {
         {libraryOpen && (
           <div
             className="il-backdrop"
-            style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.3)', display: 'flex', justifyContent: 'flex-end', fontFamily: "'Inter', -apple-system, sans-serif" }}
+            style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.3)', display: 'flex', justifyContent: 'flex-end', fontFamily: T.font }}
             onClick={() => setLibraryOpen(false)}>
             <div
-              style={{ background: 'var(--surface)', height: '100%', width: isMobile ? '100%' : '400px', maxWidth: '100%', boxShadow: '-4px 0 24px rgba(0,0,0,0.10)', display: 'flex', flexDirection: 'column' }}
+              role="dialog" aria-modal="true" aria-labelledby="task-library-title"
+              style={{ background: T.surface, height: '100%', width: isMobile ? '100%' : '400px', maxWidth: '100%', boxShadow: T.shadowLg, display: 'flex', flexDirection: 'column', borderLeft: `1px solid ${T.border}` }}
               onClick={e => e.stopPropagation()}>
-              <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+              <div style={{ padding: '20px 24px', borderBottom: `1px solid ${T.borderSubtle}`, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
                 <div>
-                  <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text)', letterSpacing: '-0.2px' }}>Task library</div>
-                  <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '4px', lineHeight: 1.5 }}>Tasks saved here appear in the dropdown when adding tasks to a role. Remove typos or outdated entries.</div>
+                  <h2 id="task-library-title" style={{ ...T.type.h2, fontSize: '15px', margin: 0, color: T.text }}>Task library</h2>
+                  <div style={{ fontSize: '12px', color: T.muted, marginTop: '4px', lineHeight: 1.5 }}>Saved task names that are suggested when you add tasks to a role. Remove typos or outdated entries.</div>
                 </div>
-                <button onClick={() => setLibraryOpen(false)} aria-label="Close" style={{ background: 'none', border: 'none', fontSize: '22px', lineHeight: 1, color: 'var(--subtle)', cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>×</button>
+                <button type="button" onClick={() => setLibraryOpen(false)} aria-label="Close task library" autoFocus className="il-btn-ghost"
+                  style={{ background: 'none', border: 'none', fontSize: '22px', lineHeight: 1, color: T.subtle, cursor: 'pointer', fontFamily: 'inherit', padding: '0 4px', borderRadius: T.radiusSm }}>×</button>
               </div>
               <div style={{ flex: 1, overflowY: 'auto', padding: '8px 24px 24px' }}>
                 {taskLibrary.length === 0 ? (
-                  <div style={{ fontSize: '12px', color: 'var(--subtle)', paddingTop: '12px' }}>Library is empty. Tasks you add to a role are saved here automatically.</div>
+                  <EmptyState compact icon={EmptyIcons.list} title="Library is empty" message="Tasks you add to a role are saved here automatically." />
                 ) : taskLibrary.map(t => (
-                  <div key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border-subtle)' }}>
-                    <span style={{ fontSize: '13px', color: 'var(--text)' }}>{t.task_name}</span>
-                    <button style={styles.btnGhost} onClick={() => deleteLibraryTask(t.id)}>Remove</button>
+                  <div key={t.id} className="il-task-row" style={{ ...BASE_STYLES.row, padding: '10px 0' }}>
+                    <span style={{ fontSize: '13px', color: T.text }}>{t.task_name}</span>
+                    <Button variant="ghost" size="xs" style={{ color: T.danger }} onClick={() => deleteLibraryTask(t.id)} aria-label={`Remove ${t.task_name} from the library`}>Remove</Button>
                   </div>
                 ))}
               </div>
@@ -1106,115 +1123,98 @@ function renderModal() {
     )
   }
 
-if (initialTab === 'documents') {
-  return (
-    <Layout session={session} userProfile={userProfile} currentPage="documents" onNavigate={onNavigate}>
-      {renderAdminHeader('Documents', '')}
-      <div style={styles.content}>
-        <div style={{ marginBottom: '28px', padding: '20px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: '10px' }}>
-          <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text)', marginBottom: '16px' }}>Upload new document</div>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <select
-              style={{ ...styles.input, flex: 1, maxWidth: '260px' }}
-              value={uploadDocRole}
-              onChange={e => setUploadDocRole(e.target.value)}
-            >
-              <option value="">All roles (universal)</option>
-              {roles.map(r => <option key={r.id} value={r.id}>{r.name} ({r.brand})</option>)}
-            </select>
-            <label style={{ ...styles.btnPrimary, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-              {uploadingDoc ? 'Uploading...' : '+ Upload document'}
-              <input type="file" style={{ display: 'none' }} accept=".pdf,.doc,.docx"
-                onChange={handleAdminDocumentUpload} disabled={uploadingDoc} />
-            </label>
+  // ── DOCUMENTS ──
+  if (initialTab === 'documents') {
+    return (
+      <Layout session={session} userProfile={userProfile} currentPage="documents" onNavigate={onNavigate}>
+        {renderAdminHeader('Documents', 'Forms and documents new hires need to review, sign or return.')}
+        <div style={contentStyle}>
+          <div style={{ ...card, padding: '16px 18px', marginBottom: '8px' }}>
+            <div style={{ fontSize: '13px', fontWeight: 600, color: T.text, marginBottom: '4px' }}>Upload a document</div>
+            <div style={{ fontSize: '12px', color: T.muted, marginBottom: '12px' }}>Choose who it’s for, then pick a PDF or Word file.</div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <select className="il-input" aria-label="Who this document is for" style={{ flex: '1 1 220px', width: 'auto', maxWidth: '320px' }} value={uploadDocRole} onChange={e => setUploadDocRole(e.target.value)}>
+                <option value="">Every employee</option>
+                {BRANDS.map(b => {
+                  const brandRoles = roles.filter(r => r.brand === b.code)
+                  return brandRoles.length ? <optgroup key={b.code} label={b.name}>{brandRoles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</optgroup> : null
+                })}
+              </select>
+              <FileButton variant="primary" busy={uploadingDoc} onFile={handleAdminDocumentUpload} accept=".pdf,.doc,.docx">Upload document</FileButton>
+            </div>
           </div>
-        </div>
 
-        {documents.length === 0 ? (
-          <div style={styles.emptyState}>No documents yet. Upload one above.</div>
-        ) : (
-          <>
-            {[null, ...roles.filter(r => documents.some(d => d.role_id === r.id))].map(role => {
+          {!loaded.documents ? listSkeleton : documents.length === 0 ? (
+            <EmptyState icon={EmptyIcons.doc} title="No documents yet" message="Upload the forms new hires need, like tax forms or policies. You can target a single role." />
+          ) : (
+            [null, ...roles.filter(r => documents.some(d => d.role_id === r.id))].map(role => {
               const roleDocs = role === null
                 ? documents.filter(d => !d.role_id)
                 : documents.filter(d => d.role_id === role.id)
               if (roleDocs.length === 0) return null
               return (
-                <div key={role?.id || 'universal'} style={{ marginBottom: '24px' }}>
-                  <div style={styles.phaseLabel}>{role ? `${role.name} (${role.brand})` : 'Universal'}</div>
+                <section key={role?.id || 'universal'} aria-label={role ? role.name : 'Every employee'}>
+                  <h2 style={groupLabel}>{role ? `${role.name} · ${brandName(role.brand)}` : 'Every employee'}</h2>
                   {roleDocs.map(doc => (
-                    <div key={doc.id} style={styles.row}>
-                      <div>
-                        <div style={styles.rowName}>{doc.name}</div>
-                        <div style={styles.rowMuted}>{new Date(doc.uploaded_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+                    <div key={doc.id} className="il-task-row" style={{ ...BASE_STYLES.row, gap: '12px' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ ...BASE_STYLES.rowName, overflowWrap: 'anywhere' }}>{doc.name}</div>
+                        <div style={BASE_STYLES.rowMuted}>Added {formatDate(doc.uploaded_at, { month: 'short', day: 'numeric', year: 'numeric' })}</div>
                       </div>
-                      <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                        <a href={doc.file_url} target="_blank" rel="noreferrer" style={{ fontSize: '12px', color: 'var(--brand)', textDecoration: 'none' }}>View</a>
-                        <button style={styles.btnGhost} onClick={() => deleteDoc(doc, false)}>Remove</button>
+                      <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexShrink: 0 }}>
+                        <a href={doc.file_url} target="_blank" rel="noreferrer" className="il-btn-link" style={{ fontSize: '12px', color: T.brand, textDecoration: 'none', padding: '4px 8px' }}>View</a>
+                        <span className="il-row-actions"><Button variant="ghost" size="xs" style={{ color: T.danger }} onClick={() => deleteDoc(doc, false)} aria-label={`Remove ${doc.name}`}>Remove</Button></span>
                       </div>
                     </div>
                   ))}
-                </div>
+                </section>
               )
-            })}
-          </>
-        )}
-      </div>
-      {renderModal()}
-    </Layout>
-  )
-}
+            })
+          )}
+        </div>
+        {renderModal()}
+      </Layout>
+    )
+  }
 
+  // ── COMPANY RESOURCES ──
   if (initialTab === 'company-resources') {
     return (
       <Layout session={session} userProfile={userProfile} currentPage="company-resources" onNavigate={onNavigate}>
-        {renderAdminHeader('Company Resources', '')}
-        <div style={styles.content}>
-          <div style={{ marginBottom: '28px', padding: '20px', background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: '10px' }}>
-            <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text)', marginBottom: '16px' }}>Upload company resource</div>
-            <label style={{ ...styles.btnPrimary, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-              {uploadingResource ? 'Uploading...' : '+ Upload document'}
-              <input type="file" style={{ display: 'none' }} accept=".pdf,.doc,.docx"
-                onChange={handleCompanyResourceUpload} disabled={uploadingResource} />
-            </label>
-          </div>
-
-          {companyResources.length === 0 ? (
-            <div style={styles.emptyState}>No company resources yet. Upload one above.</div>
+        {renderAdminHeader('Company resources', 'Handbooks, policies and guides every employee can open from their portal.',
+          <FileButton variant="primary" busy={uploadingResource} onFile={handleCompanyResourceUpload} accept=".pdf,.doc,.docx,.xlsx,.pptx">Upload</FileButton>
+        )}
+        <div style={contentStyle}>
+          {!loaded.resources ? listSkeleton : companyResources.length === 0 ? (
+            <EmptyState icon={EmptyIcons.folder} title="No company resources yet" message="Upload handbooks, policies and guides. Every employee sees them in their portal." />
           ) : (
             companyResources.map(doc => (
-              <div key={doc.id} style={styles.row}>
+              <div key={doc.id} className="il-task-row" style={{ ...BASE_STYLES.row, gap: '12px' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   {renamingDocId === doc.id ? (
-                    <input
-                      autoFocus
-                      value={renameValue}
-                      onChange={e => setRenameValue(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') renameResource(doc.id)
-                        if (e.key === 'Escape') setRenamingDocId(null)
-                      }}
-                      style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text)', border: '1px solid #c8c8c4', borderRadius: '6px', padding: '4px 8px', fontFamily: 'inherit', outline: 'none', width: '100%', maxWidth: '340px' }}
-                    />
-                  ) : (
-                    <div style={styles.rowName}>{doc.name}</div>
-                  )}
-                  <div style={styles.rowMuted}>{new Date(doc.uploaded_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
-                </div>
-                <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexShrink: 0 }}>
-                  {renamingDocId === doc.id ? (
-                    <>
-                      <button style={styles.btnGhost} onClick={() => renameResource(doc.id)}>Save</button>
-                      <button style={styles.btnGhost} onClick={() => setRenamingDocId(null)}>Cancel</button>
-                    </>
+                    <form onSubmit={e => { e.preventDefault(); renameResource(doc.id) }} style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <input className="il-input" autoFocus aria-label="Resource name" style={{ flex: '1 1 200px', width: 'auto', maxWidth: '360px' }}
+                        value={renameValue} onChange={e => setRenameValue(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Escape') setRenamingDocId(null) }} />
+                      <Button type="submit" size="sm" disabled={!renameValue.trim()}>Save</Button>
+                      <Button size="sm" variant="ghost" onClick={() => setRenamingDocId(null)}>Cancel</Button>
+                    </form>
                   ) : (
                     <>
-                      <a href={doc.file_url} target="_blank" rel="noreferrer" style={{ fontSize: '12px', color: 'var(--brand)', textDecoration: 'none' }}>View</a>
-                      <button style={styles.btnGhost} onClick={() => { setRenamingDocId(doc.id); setRenameValue(doc.name) }}>Rename</button>
-                      <button style={styles.btnGhost} onClick={() => deleteDoc(doc, true)}>Remove</button>
+                      <div style={{ ...BASE_STYLES.rowName, overflowWrap: 'anywhere' }}>{doc.name}</div>
+                      <div style={BASE_STYLES.rowMuted}>Added {formatDate(doc.uploaded_at, { month: 'short', day: 'numeric', year: 'numeric' })}</div>
                     </>
                   )}
                 </div>
+                {renamingDocId !== doc.id && (
+                  <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexShrink: 0 }}>
+                    <a href={doc.file_url} target="_blank" rel="noreferrer" className="il-btn-link" style={{ fontSize: '12px', color: T.brand, textDecoration: 'none', padding: '4px 8px' }}>View</a>
+                    <span className="il-row-actions" style={{ display: 'flex', gap: '2px' }}>
+                      <Button variant="ghost" size="xs" onClick={() => { setRenamingDocId(doc.id); setRenameValue(doc.name) }} aria-label={`Rename ${doc.name}`}>Rename</Button>
+                      <Button variant="ghost" size="xs" style={{ color: T.danger }} onClick={() => deleteDoc(doc, true)} aria-label={`Remove ${doc.name}`}>Remove</Button>
+                    </span>
+                  </div>
+                )}
               </div>
             ))
           )}
@@ -1226,10 +1226,8 @@ if (initialTab === 'documents') {
 
   return (
     <Layout session={session} userProfile={userProfile} currentPage="dashboard" onNavigate={onNavigate}>
-      {renderHeader('Admin', '')}
-      <div style={styles.content}>
-        <div style={styles.emptyState}>Select a section from the sidebar.</div>
-      </div>
+      <PageHeader title="Admin" />
+      <EmptyState icon={EmptyIcons.list} title="Pick a section" message="Choose an admin section from the sidebar." />
       {renderModal()}
     </Layout>
   )

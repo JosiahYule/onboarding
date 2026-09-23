@@ -1,119 +1,117 @@
+import { useState } from 'react'
 import Layout from '../components/Layout'
 import { SkeletonRow } from '../components/Skeleton'
-import Toast from '../components/Toast'
-import useToast from '../hooks/useToast'
 import { useWindowSize } from '../hooks/useWindowSize'
 import { getInitials } from '../utils/formatUtils'
 import { avatarStyle } from '../utils/avatarColor'
 import { useDashboard, calcProgress } from '../hooks/useDashboard'
 import Button from '../ui/Button'
-import EmptyState from '../ui/EmptyState'
+import EmptyState, { EmptyIcons } from '../ui/EmptyState'
 import AnimatedNumber from '../ui/AnimatedNumber'
+import PageHeader from '../ui/PageHeader'
+import SearchInput from '../ui/SearchInput'
 import { T } from '../ui/theme'
 import { formatDate } from '../utils/dates'
 import { getPhase } from '../utils/onboardingPhase'
 import { ROLE } from '../config'
 
-const BASE_STYLES = {
-  title: { fontSize: '20px', fontWeight: 600, letterSpacing: '-0.5px' },
-  sub: { fontSize: '13px', color: T.muted, marginTop: '2px' },
-  btn: { background: T.btnPrimaryBg, color: '#fff', border: 'none', borderRadius: T.radiusMd, padding: '8px 14px', fontSize: '13px', fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap', letterSpacing: '0.1px' },
-  statsRow: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1px', background: T.border, borderBottom: `1px solid ${T.border}` },
-  statLabel: { fontSize: '11px', color: T.subtle, marginBottom: '5px', fontWeight: 500, letterSpacing: '0.2px', textTransform: 'uppercase' },
-  tableHeader: { display: 'grid', gridTemplateColumns: '32px 2fr 1.5fr 1fr 1fr 100px', padding: '14px 0', borderBottom: `1px solid ${T.borderSubtle}`, fontSize: '11px', color: T.subtle, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', alignItems: 'center', gap: '16px' },
-  tableRow: { display: 'grid', gridTemplateColumns: '32px 2fr 1.5fr 1fr 1fr 100px', padding: '14px 0', borderBottom: '1px solid var(--border-subtle)', alignItems: 'center', gap: '16px', cursor: 'pointer', borderRadius: '8px' },
-  avatar: { width: '28px', height: '28px', borderRadius: '50%', background: 'linear-gradient(135deg, #dbeafe, #bfdbfe)', color: '#1d4ed8', fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' },
-  avatarLg: { width: '38px', height: '38px', borderRadius: '10px', background: 'linear-gradient(135deg, #dbeafe, #bfdbfe)', color: '#1d4ed8', fontSize: '13px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  rowName: { fontSize: '13px', fontWeight: 500, color: T.text },
-  rowMeta: { fontSize: '12px', color: T.subtle, marginTop: '2px' },
-  rowText: { fontSize: '13px', color: T.text },
-  rowTextMuted: { fontSize: '13px', color: T.subtle },
-  progressWrap: { display: 'flex', alignItems: 'center', gap: '10px' },
+const COLS = '32px minmax(0, 2fr) minmax(0, 1.4fr) minmax(120px, 1fr) 120px 90px'
+
+const S = {
+  statLabel: { fontSize: '11px', color: T.subtle, marginBottom: '5px', fontWeight: 600, letterSpacing: '0.4px', textTransform: 'uppercase' },
+  tableHeader: { display: 'grid', gridTemplateColumns: COLS, padding: '14px 12px', margin: '0 -12px', borderBottom: `1px solid ${T.borderSubtle}`, fontSize: '11px', color: T.subtle, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', alignItems: 'center', gap: '16px' },
+  tableRow: { display: 'grid', gridTemplateColumns: COLS, padding: '14px 12px', margin: '0 -12px', width: 'calc(100% + 24px)', alignItems: 'center', gap: '16px', cursor: 'pointer', borderRadius: T.radiusMd, border: 'none', borderBottom: `1px solid ${T.borderSubtle}`, background: 'none', font: 'inherit', textAlign: 'left', color: 'inherit' },
+  avatar: { width: '28px', height: '28px', borderRadius: '50%', fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  avatarLg: { width: '38px', height: '38px', borderRadius: '10px', fontSize: '13px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  truncate: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   progressTrack: { flex: 1, height: '5px', background: T.borderSubtle, borderRadius: '99px', overflow: 'hidden' },
-  progressFill: { height: '100%', borderRadius: '99px', background: `linear-gradient(90deg, ${T.brand}, ${T.brandMid})` },
-  progressText: { fontSize: '12px', fontWeight: 600, color: T.text, minWidth: '32px' },
-  phasePill: { fontSize: '11px', padding: '2px 8px', borderRadius: '5px', background: T.brandLight, color: T.brand, fontWeight: 600 },
+  phasePill: { fontSize: '11px', padding: '2px 8px', borderRadius: '99px', background: T.brandLight, color: T.brand, fontWeight: 600, whiteSpace: 'nowrap' },
 }
 
 function phasePillStyle(tone) {
-  if (tone === 'warning') return { ...BASE_STYLES.phasePill, background: T.warningBg, color: T.warning }
-  if (tone === 'neutral') return { ...BASE_STYLES.phasePill, background: 'var(--hover-bg)', color: T.muted }
-  return BASE_STYLES.phasePill
+  if (tone === 'warning') return { ...S.phasePill, background: T.warningBg, color: T.warning }
+  if (tone === 'neutral') return { ...S.phasePill, background: T.hoverBg, color: T.muted }
+  return S.phasePill
 }
 
-export default function Dashboard({ session, userProfile, onStartOnboarding, onViewOnboarding, onNavigate, refreshKey }) {
+function Progress({ pct }) {
+  const done = pct === 100
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }} aria-label={`${pct}% complete`}>
+      <div style={S.progressTrack}>
+        <div className="il-progress-fill" style={{ height: '100%', width: `${pct}%`, borderRadius: '99px', background: done ? T.success : `linear-gradient(90deg, ${T.brand}, ${T.brandMid})` }} />
+      </div>
+      <span className="il-tabular" style={{ fontSize: '12px', fontWeight: 600, color: done ? T.success : T.text, minWidth: '34px', textAlign: 'right' }}>{pct}%</span>
+    </div>
+  )
+}
+
+export default function Dashboard({ session, userProfile, onViewOnboarding, onNavigate, refreshKey }) {
   const { onboardings, completedCount, loading, fetchError, docStats, offToday, refetch: fetchOnboardings } = useDashboard(refreshKey)
-  const { toast, hideToast } = useToast()
   const { isMobile } = useWindowSize()
+  const [query, setQuery] = useState('')
   // Managers get a read-only dashboard; starting onboardings is admin-only.
   const canManage = userProfile?.role === ROLE.ADMIN || userProfile?.role === ROLE.SUPER_ADMIN
 
-  const completingThisWeek = onboardings.filter(o => {
-    const { total, pct } = calcProgress(o.task_completions)
-    return total > 0 && pct >= 90
-  }).length
+  const rows = onboardings.map(o => ({ o, ...calcProgress(o.task_completions), phase: getPhase(o.employees.hire_date) }))
+  const nearlyDone = rows.filter(r => r.total > 0 && r.pct >= 90).length
 
-  const p = isMobile ? '16px' : '40px'
+  const q = query.trim().toLowerCase()
+  const visible = q
+    ? rows.filter(({ o }) => [o.employees.full_name, o.employees.email, o.employees.roles?.name].some(v => (v || '').toLowerCase().includes(q)))
+    : rows
 
-  const styles = {
-    ...BASE_STYLES,
-    header: { padding: isMobile ? '16px 16px 14px' : '28px 40px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 1px 0 var(--border)', background: 'var(--surface)' },
-    statsRow: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: isMobile ? '8px' : '12px', padding: isMobile ? '14px 16px 4px' : '20px 40px 6px' },
-    stat: { padding: isMobile ? '13px 14px' : '18px 22px', borderRadius: T.radiusLg },
-    statValue: { fontSize: isMobile ? '22px' : '26px', fontWeight: 700, letterSpacing: '-0.8px', color: 'var(--text)', fontVariantNumeric: 'tabular-nums' },
-    content: { padding: isMobile ? '0' : `0 ${p}`, flex: 1 },
-    emptyState: { padding: isMobile ? '60px 16px' : '80px 40px', textAlign: 'center' },
-    errorState: { padding: isMobile ? '60px 16px' : '80px 40px', textAlign: 'center', fontSize: '14px' },
-  }
+  const px = isMobile ? '16px' : '40px'
+  const offNames = offToday.map(r => r.employees?.full_name).filter(Boolean)
 
   return (
     <Layout session={session} userProfile={userProfile} currentPage="dashboard" onNavigate={onNavigate}>
-      <div className="il-header" style={styles.header}>
-        <div>
-          <div style={styles.title}>Dashboard</div>
-          {!isMobile && <div style={styles.sub}>Overview of active employee onboardings.</div>}
-        </div>
-        {canManage && (
+      <PageHeader
+        title="Dashboard"
+        subtitle={isMobile ? null : 'Everyone currently onboarding, at a glance.'}
+        actions={canManage && (
           <Button size="sm" onClick={() => onNavigate('active')}>
-            <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M7 2v10M2 7h10"/></svg>
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true"><path d="M7 2v10M2 7h10" /></svg>
             {isMobile ? 'New' : 'New onboarding'}
           </Button>
         )}
-      </div>
+      />
 
-      <div style={styles.statsRow}>
-        <div className="il-tile" style={styles.stat}>
-          <div style={styles.statLabel}>Active</div>
-          <AnimatedNumber value={onboardings.length} style={styles.statValue} />
-        </div>
-        <div className="il-tile" style={styles.stat}>
-          <div style={styles.statLabel}>90%+ done</div>
-          <AnimatedNumber value={completingThisWeek} style={styles.statValue} />
-        </div>
-        <div className="il-tile" style={styles.stat}>
-          <div style={styles.statLabel}>Completed</div>
-          <AnimatedNumber value={completedCount} style={styles.statValue} />
-        </div>
-      </div>
+      <section aria-label="Summary" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: isMobile ? '8px' : '12px', padding: isMobile ? '14px 16px 4px' : `20px ${px} 6px` }}>
+        {[
+          { label: 'Active', value: onboardings.length },
+          { label: isMobile ? '90%+ done' : 'Nearly done (90%+)', value: nearlyDone },
+          { label: 'Completed', value: completedCount },
+        ].map(stat => (
+          <div key={stat.label} className="il-tile" style={{ padding: isMobile ? '13px 14px' : '18px 22px' }}>
+            <div style={S.statLabel}>{stat.label}</div>
+            <AnimatedNumber value={loading ? 0 : stat.value} style={{ fontSize: isMobile ? '22px' : '26px', fontWeight: 700, letterSpacing: '-0.8px', color: T.text }} />
+          </div>
+        ))}
+      </section>
 
-      {offToday.length > 0 && (
-        <div style={{ background: 'var(--surface-raised)', borderBottom: '1px solid var(--border)', padding: `10px ${p}`, display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-          <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="var(--success)" strokeWidth="1.5" style={{ flexShrink: 0 }}>
-            <rect x="1" y="3" width="12" height="10" rx="1"/><path d="M1 6h12M4 1v4M10 1v4"/>
+      {offNames.length > 0 && (
+        <div role="status" style={{ margin: isMobile ? '10px 16px 0' : `14px ${px} 0`, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', background: T.successBg, border: `1px solid ${T.successBorder}`, borderRadius: T.radiusMd, fontSize: '12px', color: T.success }}>
+          <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true" style={{ flexShrink: 0 }}>
+            <rect x="1" y="3" width="12" height="10" rx="1" /><path d="M1 6h12M4 1v4M10 1v4" />
           </svg>
-          <span style={{ fontSize: '12px', color: 'var(--success)', fontWeight: 500 }}>Off today:</span>
-          <span style={{ fontSize: '12px', color: 'var(--success)' }}>
-            {offToday.map(r => r.employees?.full_name).filter(Boolean).join(', ')}
-          </span>
+          <span style={{ fontWeight: 600 }}>Off today:</span>
+          <span>{offNames.join(', ')}</span>
         </div>
       )}
 
-      <div style={styles.content}>
+      <div style={{ padding: isMobile ? '0' : `0 ${px}`, flex: 1 }}>
+        {!loading && !fetchError && onboardings.length > 3 && (
+          <div style={{ padding: isMobile ? '14px 16px 4px' : '20px 0 0', maxWidth: isMobile ? 'none' : '320px' }}>
+            <SearchInput value={query} onChange={setQuery} placeholder="Search by name, email or role" label="Search onboardings" />
+          </div>
+        )}
+
         {loading ? (
           isMobile ? (
-            [1,2,3,4].map(i => (
-              <div key={i} style={{ padding: '14px 16px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div style={{ ...styles.avatarLg, background: 'var(--skeleton-base)' }} />
+            [1, 2, 3, 4].map(i => (
+              <div key={i} style={{ padding: '14px 16px', borderBottom: `1px solid ${T.borderSubtle}`, display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ ...S.avatarLg, background: 'var(--skeleton-base)' }} />
                 <div style={{ flex: 1 }}>
                   <div style={{ height: '13px', background: 'var(--skeleton-base)', borderRadius: '4px', width: '55%', marginBottom: '8px' }} />
                   <div style={{ height: '4px', background: 'var(--skeleton-base)', borderRadius: '2px', width: '80%' }} />
@@ -121,98 +119,78 @@ export default function Dashboard({ session, userProfile, onStartOnboarding, onV
               </div>
             ))
           ) : (
-            <div className="il-card" style={{ margin: '24px 0 40px', padding: '0 20px' }}>
-              <div style={{ ...styles.tableHeader, padding: '14px 0' }}>
-                <div></div><div>Employee</div><div>Role</div>
-                <div>Progress</div><div>Phase</div>
-                <div style={{ textAlign: 'right' }}>Start date</div>
-              </div>
+            <div className="il-card" style={{ margin: '20px 0 40px', padding: '0 20px' }} aria-busy="true">
               <SkeletonRow /><SkeletonRow /><SkeletonRow /><SkeletonRow />
             </div>
           )
         ) : fetchError ? (
-          <div style={styles.errorState}>
-            <div style={{ color: '#c04040', marginBottom: '12px' }}>{fetchError}</div>
-            <Button variant="ghost" onClick={fetchOnboardings} style={{ color: 'var(--brand)' }}>
-              Try again
-            </Button>
-          </div>
+          <EmptyState
+            icon={EmptyIcons.alert}
+            title="Couldn't load onboardings"
+            message={fetchError}
+            action={<Button variant="secondary" onClick={fetchOnboardings}>Try again</Button>}
+          />
         ) : onboardings.length === 0 ? (
           <EmptyState
-            icon={(
-              <svg width="24" height="24" viewBox="0 0 36 36" fill="none">
-                <circle cx="18" cy="12" r="6.5" stroke="currentColor" strokeWidth="1.5"/>
-                <path d="M5 34c0-7.2 5.8-13 13-13s13 5.8 13 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                <circle cx="27" cy="27" r="6" fill="#f7f6f3" stroke="currentColor" strokeWidth="1.5"/>
-                <path d="M24.5 27l1.5 1.5 3-3" stroke="#1a7a4a" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            )}
+            icon={EmptyIcons.people}
             title="No active onboardings"
-            message="Start a new onboarding to get someone up to speed."
+            message={canManage ? 'Start a new onboarding to build someone’s first-90-days plan.' : 'When HR starts an onboarding, it will appear here.'}
             action={canManage ? <Button onClick={() => onNavigate('active')}>New onboarding</Button> : null}
           />
+        ) : visible.length === 0 ? (
+          <EmptyState compact icon={EmptyIcons.search} title="No matches" message={`Nobody matches “${query}”.`}
+            action={<Button variant="secondary" size="sm" onClick={() => setQuery('')}>Clear search</Button>} />
         ) : isMobile ? (
-          onboardings.map((o, i) => {
-            const { pct } = calcProgress(o.task_completions)
-            const name = o.employees.full_name
-            const phase = getPhase(o.employees.hire_date)
-            return (
-              <button type="button" key={o.id} className="il-row il-stagger" aria-label={`View ${name}'s onboarding`}
-                style={{ width: '100%', padding: '14px 16px', border: 'none', borderBottom: '1px solid var(--border-subtle)', background: 'none', font: 'inherit', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px', animationDelay: `${Math.min(i, 12) * 25}ms` }}
-                onClick={() => onViewOnboarding(o.id)}>
-                <div style={{ ...styles.avatarLg, ...avatarStyle(name) }}>{getInitials(name)}</div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
-                    <span style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text)' }}>{name}</span>
-                    <span style={phasePillStyle(phase.tone)}>{phase.label}</span>
-                  </div>
-                  <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '8px' }}>{o.employees.roles?.name || 'Unknown role'}</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div style={styles.progressTrack}>
-                      <div className="il-progress-fill" style={{ ...styles.progressFill, width: `${pct}%`, background: pct === 100 ? 'linear-gradient(90deg, #1a7a4a, #2ea864)' : 'linear-gradient(90deg, #0066cc, #3d9eff)' }} />
+          <div style={{ paddingTop: '6px' }}>
+            {visible.map(({ o, pct, phase }, i) => {
+              const name = o.employees.full_name
+              return (
+                <button type="button" key={o.id} className="il-row il-stagger" aria-label={`${name}, ${o.employees.roles?.name || 'no role'}, ${pct}% complete`}
+                  style={{ width: '100%', padding: '14px 16px', border: 'none', borderBottom: `1px solid ${T.borderSubtle}`, background: 'none', font: 'inherit', color: 'inherit', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px', animationDelay: `${Math.min(i, 12) * 25}ms` }}
+                  onClick={() => onViewOnboarding(o.id)}>
+                  <div aria-hidden="true" style={{ ...S.avatarLg, ...avatarStyle(name) }}>{getInitials(name)}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+                      <span style={{ ...S.truncate, fontSize: '14px', fontWeight: 500, color: T.text }}>{name}</span>
+                      <span style={{ ...phasePillStyle(phase.tone), flexShrink: 0 }}>{phase.label}</span>
                     </div>
-                    <span style={{ fontSize: '12px', fontWeight: 500, color: pct === 100 ? '#1a7a4a' : '#18181b', flexShrink: 0 }}>{pct}%</span>
+                    <div style={{ ...S.truncate, fontSize: '12px', color: T.muted, marginBottom: '8px' }}>{o.employees.roles?.name || 'No role'}</div>
+                    <Progress pct={pct} />
                   </div>
-                </div>
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#d4d3cf" strokeWidth="1.5" style={{ flexShrink: 0 }}><path d="M5 3l4 4-4 4"/></svg>
-              </button>
-            )
-          })
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true" style={{ flexShrink: 0, color: T.subtle }}><path d="M5 3l4 4-4 4" /></svg>
+                </button>
+              )
+            })}
+          </div>
         ) : (
-          <div className="il-card" style={{ margin: '24px 0 40px', padding: '0 20px' }}>
-            <div style={styles.tableHeader}>
+          <div className="il-card" style={{ margin: '20px 0 40px', padding: '0 20px' }}>
+            <div style={S.tableHeader} aria-hidden="true">
               <div></div><div>Employee</div><div>Role</div>
               <div>Progress</div><div>Phase</div>
               <div style={{ textAlign: 'right' }}>Start date</div>
             </div>
-            {onboardings.map((o, i) => {
-              const { pct } = calcProgress(o.task_completions)
+            {visible.map(({ o, pct, phase }, i) => {
               const name = o.employees.full_name
-              const phase = getPhase(o.employees.hire_date)
               const uploadedDocs = docStats[o.employees.id] || 0
               return (
-                <button type="button" key={o.id} className="il-row il-stagger" aria-label={`View ${name}'s onboarding`}
-                  style={{ ...styles.tableRow, width: '100%', border: 'none', borderBottom: '1px solid var(--border-subtle)', background: 'none', font: 'inherit', textAlign: 'left', animationDelay: `${Math.min(i, 12) * 25}ms` }}
+                <button type="button" key={o.id} className="il-row il-stagger"
+                  aria-label={`${name}, ${o.employees.roles?.name || 'no role'}, ${pct}% complete, ${phase.label}`}
+                  style={{ ...S.tableRow, animationDelay: `${Math.min(i, 12) * 25}ms` }}
                   onClick={() => onViewOnboarding(o.id)}>
-                  <div style={{ ...styles.avatar, ...avatarStyle(name) }}>{getInitials(name)}</div>
-                  <div>
-                    <div style={styles.rowName}>{name}</div>
-                    <div style={styles.rowMeta}>
-                      {o.employees.email || ''}
+                  <div aria-hidden="true" style={{ ...S.avatar, ...avatarStyle(name) }}>{getInitials(name)}</div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ ...S.truncate, fontSize: '13px', fontWeight: 500, color: T.text }}>{name}</div>
+                    <div style={{ ...S.truncate, fontSize: '12px', color: T.subtle, marginTop: '2px' }}>
+                      {o.employees.email || 'No email on file'}
                       {uploadedDocs > 0 && (
-                        <span style={{ marginLeft: '8px', color: '#1a7a4a', fontSize: '11px' }}>
-                          · {uploadedDocs} doc{uploadedDocs > 1 ? 's' : ''} uploaded
-                        </span>
+                        <span style={{ color: T.success }}> · {uploadedDocs} doc{uploadedDocs > 1 ? 's' : ''} uploaded</span>
                       )}
                     </div>
                   </div>
-                  <div style={styles.rowText}>{o.employees.roles?.name || 'Unknown role'}</div>
-                  <div style={styles.progressWrap}>
-                    <div style={styles.progressTrack}><div className="il-progress-fill" style={{ ...styles.progressFill, width: `${pct}%`, background: pct === 100 ? 'linear-gradient(90deg, #1a7a4a, #2ea864)' : 'linear-gradient(90deg, #0066cc, #3d9eff)' }}></div></div>
-                    <div style={{ ...styles.progressText, color: pct === 100 ? '#1a7a4a' : '#18181b' }}>{pct}%</div>
-                  </div>
+                  <div style={{ ...S.truncate, fontSize: '13px', color: T.text }}>{o.employees.roles?.name || '—'}</div>
+                  <Progress pct={pct} />
                   <div><span style={phasePillStyle(phase.tone)}>{phase.label}</span></div>
-                  <div style={{ ...styles.rowTextMuted, textAlign: 'right' }} className="il-tabular">
+                  <div className="il-tabular" style={{ fontSize: '13px', color: T.subtle, textAlign: 'right' }}>
                     {formatDate(o.employees.hire_date, { month: 'short', day: 'numeric' })}
                   </div>
                 </button>
@@ -221,8 +199,6 @@ export default function Dashboard({ session, userProfile, onStartOnboarding, onV
           </div>
         )}
       </div>
-
-      {toast && <Toast key={toast.id} message={toast.message} type={toast.type} onClose={hideToast} />}
     </Layout>
   )
 }

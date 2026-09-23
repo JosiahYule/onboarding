@@ -295,8 +295,49 @@ input:focus,
 select:focus,
 textarea:focus {
   outline: none !important;
-  border-color: #79aede !important;
-  box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.13) !important;
+  border-color: var(--brand) !important;
+  box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.14) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 22%, transparent) !important;
+}
+/* Checkboxes and radios keep the standard keyboard ring instead. */
+input[type="checkbox"]:focus,
+input[type="radio"]:focus {
+  box-shadow: none !important;
+}
+input[type="checkbox"]:focus-visible,
+input[type="radio"]:focus-visible {
+  outline: 2px solid var(--focus) !important;
+  outline-offset: 2px;
+}
+
+/* Shared text-field look (see ui/Field.js). Inline styles elsewhere can still
+   override individual properties. */
+.il-input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 9px 12px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text);
+  font-family: inherit;
+}
+.il-input::placeholder,
+textarea::placeholder,
+input::placeholder {
+  color: var(--subtle);
+}
+.il-input:disabled {
+  background: var(--surface-raised);
+  color: var(--subtle);
+  cursor: not-allowed;
+}
+textarea.il-input {
+  resize: vertical;
+  min-height: 72px;
 }
 input, select, textarea {
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
@@ -361,6 +402,57 @@ input, select, textarea {
 }
 .il-btn-ghost:not([disabled]):active {
   transform: translateY(1px);
+}
+
+/* Quiet destructive button */
+.il-btn-danger-outline {
+  transition: background 0.14s ease, border-color 0.14s ease;
+}
+.il-btn-danger-outline:not([disabled]):hover {
+  background: var(--danger-bg) !important;
+  border-color: var(--danger) !important;
+}
+
+/* Inline text button */
+.il-btn-link {
+  transition: opacity 0.12s ease;
+}
+.il-btn-link:not([disabled]):hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Tabs and segmented controls */
+.il-tab:not([disabled]):not([aria-selected="true"]):not([aria-current="page"]):hover {
+  color: var(--text) !important;
+}
+.il-segment[aria-checked="false"]:hover {
+  color: var(--text) !important;
+}
+
+/* Overflow menu items */
+.il-menu-item:not([disabled]):hover,
+.il-menu-item:focus-visible {
+  background: var(--hover-bg) !important;
+  outline: none;
+}
+.il-menu-item-danger:not([disabled]):hover,
+.il-menu-item-danger:focus-visible {
+  background: var(--danger-bg) !important;
+}
+
+/* Row actions (Edit / Remove) appear on hover or keyboard focus, so a long
+   list isn't a wall of repeated links. Always shown on touch screens. */
+.il-row-actions {
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.il-task-row:hover .il-row-actions,
+.il-task-row:focus-within .il-row-actions {
+  opacity: 1;
+}
+@media (hover: none) {
+  .il-row-actions { opacity: 1; }
 }
 
 /* Sidebar nav items */
@@ -473,6 +565,20 @@ input, select, textarea {
   .il-header:not([data-topbar]) {
     top: 54px;
   }
+}
+
+/* Toasts clear the mobile tab bar (56px + the home-indicator inset). */
+.il-toast {
+  bottom: 32px;
+}
+@media (max-width: 767px) {
+  .il-toast {
+    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+.il-header.il-header-static {
+  position: relative;
 }
 
 /* Mobile bottom tab bar glass */

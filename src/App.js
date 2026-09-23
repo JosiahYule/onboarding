@@ -10,6 +10,7 @@ import EmployeePortal from './pages/EmployeePortal'
 import SetPassword from './pages/SetPassword'
 import { pageToPath, pathToPage, planPath, parseInstanceId, ROLE } from './config'
 import Button from './ui/Button'
+import Field from './ui/Field'
 import { T } from './ui/theme'
 
 
@@ -128,23 +129,29 @@ useEffect(() => {
 
   async function handleLogin() {
     if (authBusy) return
+    if (!email.trim() || !password) {
+      setError('Enter your email and password.')
+      return
+    }
     setError('')
     setAuthBusy(true)
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
     if (error) {
       setError(error.message.includes('Invalid login credentials')
         ? 'Incorrect email or password.'
-        : error.message)
+        : error.message.includes('Email not confirmed')
+          ? 'Please use the link in your invite email to finish setting up your account first.'
+          : error.message)
     }
     setAuthBusy(false)
   }
 
   async function handleForgotPassword() {
     if (authBusy) return
-    if (!email) { setError('Please enter your email address first.'); return }
+    if (!email.trim()) { setError('Please enter your email address first.'); return }
     setError('')
     setAuthBusy(true)
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
       redirectTo: window.location.origin
     })
     if (error) setError(error.message)
@@ -171,84 +178,68 @@ useEffect(() => {
     navigate(target === 'active' ? 'new-onboarding-select' : target)
   }
 
-if (!session) {
-  const inputStyle = { display: 'block', width: '100%', marginBottom: '16px', padding: '10px 14px', border: `1px solid ${T.border}`, borderRadius: T.radiusMd, fontSize: '13px', fontFamily: 'inherit', color: T.text, background: T.surface, boxSizing: 'border-box' }
-  const labelStyle = { fontSize: '12px', color: T.muted, marginBottom: '6px', display: 'block', fontWeight: 500 }
-  const errorStyle = { fontSize: '12px', color: T.danger, marginBottom: '16px', padding: '10px 12px', background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: '7px' }
-  const linkBtn = { width: '100%', background: 'transparent', color: T.muted, border: 'none', fontSize: '12px', cursor: 'pointer', fontFamily: 'inherit', padding: '4px', marginTop: '4px' }
-
-  return (
-    <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: T.font, padding: '20px' }}>
-      <div className="il-auth" style={{ width: '100%', maxWidth: '380px' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '40px' }}>
-          <div style={{ width: '48px', height: '48px', background: 'linear-gradient(135deg, #004db3 0%, #0080ff 100%)', borderRadius: T.radiusLg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '16px', fontWeight: 700, marginBottom: '18px', boxShadow: '0 4px 16px rgba(0,102,204,0.3)' }}>IL</div>
-          <div style={{ fontSize: '22px', fontWeight: 600, color: T.text, letterSpacing: '-0.6px', marginBottom: '4px' }}>Welcome back</div>
-          <div style={{ fontSize: '13px', color: T.muted }}>Sign in to Integrated Launch</div>
-        </div>
-
-        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: '14px', padding: '28px', boxShadow: '0 4px 24px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04)' }}>
-          {resetSent ? (
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '14px', fontWeight: 500, color: T.text, marginBottom: '8px' }}>Check your email</div>
-              <div style={{ fontSize: '13px', color: T.muted, lineHeight: '1.6', marginBottom: '20px' }}>
-                We sent a password reset link to {email}. Click the link to set a new password.
-              </div>
-              <Button variant="ghost" fullWidth onClick={() => { setResetSent(false); setForgotPassword(false) }} style={{ color: T.brand }}>
-                Back to sign in
-              </Button>
-            </div>
-          ) : forgotPassword ? (
-            <>
-              <div style={{ fontSize: '14px', fontWeight: 500, color: T.text, marginBottom: '4px' }}>Reset your password</div>
-              <div style={{ fontSize: '13px', color: T.muted, marginBottom: '20px' }}>Enter your email and we'll send you a reset link.</div>
-              <label htmlFor="login-email" style={labelStyle}>Email</label>
-              <input id="login-email" type="email" autoComplete="email" placeholder="you@integratedstaffing.ca" value={email} onChange={e => setEmail(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleForgotPassword()}
-                style={inputStyle} />
-              {error && (
-                <div role="alert" style={errorStyle}>
-                  {error}
-                </div>
-              )}
-              <Button fullWidth busy={authBusy} busyLabel="Sending…" onClick={handleForgotPassword}>
-                Send reset link
-              </Button>
-              <button onClick={() => { setForgotPassword(false); setError('') }} style={linkBtn}>
-                Back to sign in
-              </button>
-            </>
-          ) : (
-            <>
-              <label htmlFor="login-email" style={labelStyle}>Email</label>
-              <input id="login-email" type="email" autoComplete="email" placeholder="you@integratedstaffing.ca" value={email} onChange={e => setEmail(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleLogin()}
-                style={inputStyle} />
-              <label htmlFor="login-password" style={labelStyle}>Password</label>
-              <input id="login-password" type="password" autoComplete="current-password" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleLogin()}
-                style={{ ...inputStyle, marginBottom: '20px' }} />
-              {error && (
-                <div role="alert" style={errorStyle}>
-                  {error}
-                </div>
-              )}
-              <Button fullWidth busy={authBusy} busyLabel="Signing in…" onClick={handleLogin}>
-                Sign in
-              </Button>
-              <button onClick={() => { setForgotPassword(true); setError('') }} style={linkBtn}>
-                Forgot password?
-              </button>
-            </>
-          )}
-        </div>
-
-        <div style={{ textAlign: 'center', marginTop: '24px', fontSize: '12px', color: T.subtle }}>
-          Integrated Staffing Limited · onboarding portal
-        </div>
+  if (!session) {
+    const errorBox = error && (
+      <div role="alert" style={{ fontSize: '12px', color: T.danger, marginBottom: '16px', padding: '10px 12px', background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: T.radiusSm, lineHeight: 1.5 }}>
+        {error}
       </div>
-    </div>
-  )
-}
+    )
+    const linkBtn = { width: '100%', marginTop: '10px', fontSize: '12px', color: T.muted, justifyContent: 'center' }
+
+    return (
+      <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: T.font, padding: '20px' }}>
+        <main className="il-auth" style={{ width: '100%', maxWidth: '380px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '32px' }}>
+            <div aria-hidden="true" style={{ width: '48px', height: '48px', background: 'linear-gradient(135deg, #004db3 0%, #0080ff 100%)', borderRadius: T.radiusLg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '16px', fontWeight: 700, marginBottom: '18px', boxShadow: '0 4px 16px rgba(0,102,204,0.3)' }}>IL</div>
+            <h1 style={{ fontSize: '22px', fontWeight: 600, color: T.text, letterSpacing: '-0.6px', margin: '0 0 4px' }}>
+              {resetSent ? 'Check your email' : forgotPassword ? 'Reset your password' : 'Welcome back'}
+            </h1>
+            <div style={{ fontSize: '13px', color: T.muted, textAlign: 'center' }}>
+              {resetSent ? 'A reset link is on its way.' : forgotPassword ? 'We’ll email you a link to set a new one.' : 'Sign in to Integrated Launch'}
+            </div>
+          </div>
+
+          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: '14px', padding: '28px', boxShadow: T.shadowMd }}>
+            {resetSent ? (
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '13px', color: T.muted, lineHeight: 1.6, marginBottom: '20px' }}>
+                  If an account exists for <strong style={{ color: T.text, fontWeight: 500 }}>{email}</strong>, you’ll get an email with a link to set a new password. It can take a minute to arrive.
+                </div>
+                <Button variant="secondary" fullWidth onClick={() => { setResetSent(false); setForgotPassword(false) }}>
+                  Back to sign in
+                </Button>
+              </div>
+            ) : (
+              <form onSubmit={e => { e.preventDefault(); forgotPassword ? handleForgotPassword() : handleLogin() }} noValidate>
+                <Field label="Email">
+                  <input id="login-email" type="email" autoComplete="username" inputMode="email" placeholder="you@integratedstaffing.ca"
+                    value={email} onChange={e => setEmail(e.target.value)} autoFocus />
+                </Field>
+                {!forgotPassword && (
+                  <Field label="Password" style={{ marginBottom: '20px' }}>
+                    <input id="login-password" type="password" autoComplete="current-password" placeholder="••••••••"
+                      value={password} onChange={e => setPassword(e.target.value)} />
+                  </Field>
+                )}
+                {errorBox}
+                <Button type="submit" fullWidth busy={authBusy} busyLabel={forgotPassword ? 'Sending…' : 'Signing in…'}>
+                  {forgotPassword ? 'Send reset link' : 'Sign in'}
+                </Button>
+                <Button variant="ghost" size="sm" style={linkBtn}
+                  onClick={() => { setForgotPassword(f => !f); setError('') }}>
+                  {forgotPassword ? 'Back to sign in' : 'Forgot password?'}
+                </Button>
+              </form>
+            )}
+          </div>
+
+          <div style={{ textAlign: 'center', marginTop: '24px', fontSize: '12px', color: T.subtle }}>
+            Integrated Staffing · Accountant Staffing · Administrative Staffing
+          </div>
+        </main>
+      </div>
+    )
+  }
 
   if (profileLoading) {
     return (
@@ -322,6 +313,7 @@ if (!session) {
         userProfile={userProfile}
         roleId={selectedRole.id}
         roleName={selectedRole.name}
+        roleBrand={selectedRole.brand}
         onBack={() => { setRefreshKey(k => k + 1); navigate('dashboard') }}
         onNavigate={handleNavigate}
         onComplete={(instanceId) => {

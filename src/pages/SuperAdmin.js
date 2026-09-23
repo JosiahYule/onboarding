@@ -2,12 +2,22 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '../supabaseClient'
 import Layout from '../components/Layout'
 import Toast from '../components/Toast'
+import ConfirmModal from '../components/ConfirmModal'
+import { SkeletonLine } from '../components/Skeleton'
 import useToast from '../hooks/useToast'
 import { handleSupabaseError } from '../utils/handleError'
 import { logAudit } from '../utils/auditLog'
 import { clearSettingsCache } from '../utils/getHrEmail'
+import { humanize } from '../utils/formatUtils'
+import { formatDate } from '../utils/dates'
 import { useWindowSize } from '../hooks/useWindowSize'
-import { ROLE } from '../config'
+import { ROLE, BRANDS, brandName } from '../config'
+import PageHeader from '../ui/PageHeader'
+import Button from '../ui/Button'
+import Field from '../ui/Field'
+import Segmented from '../ui/Segmented'
+import SearchInput from '../ui/SearchInput'
+import EmptyState, { EmptyIcons } from '../ui/EmptyState'
 import { T } from '../ui/theme'
 
 const ACTION_LABELS = {
@@ -36,88 +46,66 @@ const ACTION_LABELS = {
 }
 
 const CHANGEABLE_ROLES = [ROLE.ADMIN, ROLE.MANAGER, ROLE.EMPLOYEE]
+const ROLE_HINTS = {
+  [ROLE.ADMIN]: 'Can start and manage onboardings, templates, documents and time off.',
+  [ROLE.MANAGER]: 'Read-only view of the dashboard and onboarding plans.',
+  [ROLE.EMPLOYEE]: 'Their own onboarding portal only.',
+}
 
 const s = {
-  table: { width: '100%', borderCollapse: 'collapse' },
-  th: { fontSize: '11px', fontWeight: 600, color: T.subtle, textTransform: 'uppercase', letterSpacing: '0.5px', padding: '0 12px 12px 0', textAlign: 'left', borderBottom: `1px solid ${T.border}` },
-  td: { fontSize: '13px', color: T.text, padding: '13px 12px 13px 0', borderBottom: '1px solid var(--border-subtle)', verticalAlign: 'middle' },
-  statusDot: (active) => ({
-    display: 'inline-block', width: 7, height: 7, borderRadius: '50%',
-    background: active ? T.success : T.danger, marginRight: 6, flexShrink: 0,
-  }),
-  select: { border: `1px solid ${T.border}`, borderRadius: '7px', padding: '5px 8px', fontSize: '12px', fontFamily: 'inherit', background: T.surface, color: T.text, outline: 'none', cursor: 'pointer' },
-  btnSmall: (danger) => ({
-    fontSize: '12px', padding: '4px 10px', borderRadius: T.radiusSm, cursor: 'pointer', fontFamily: 'inherit',
-    border: '1px solid ' + (danger ? T.dangerBorder : T.border),
-    background: 'transparent',
-    color: danger ? T.danger : T.muted,
-    transition: 'background 0.1s ease',
-  }),
-  filterSelect: { border: `1px solid ${T.border}`, borderRadius: '7px', padding: '7px 10px', fontSize: '12px', fontFamily: 'inherit', background: T.surface, color: T.text, outline: 'none' },
-  filterInput: { border: `1px solid ${T.border}`, borderRadius: '7px', padding: '7px 10px', fontSize: '12px', fontFamily: 'inherit', background: T.surface, color: T.text, outline: 'none' },
-  btnSave: { background: T.btnPrimaryBg, color: '#fff', border: 'none', borderRadius: T.radiusMd, padding: '8px 14px', fontSize: '12px', fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, letterSpacing: '0.1px' },
-  empty: { padding: '48px 0', textAlign: 'center', color: T.subtle, fontSize: '13px' },
+  card: { background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radiusLg, boxShadow: T.shadowSm },
+  th: { fontSize: '11px', fontWeight: 600, color: T.subtle, textTransform: 'uppercase', letterSpacing: '0.5px', padding: '10px 12px', textAlign: 'left', borderBottom: `1px solid ${T.border}`, background: T.surfaceSunken, whiteSpace: 'nowrap' },
+  td: { fontSize: '13px', color: T.text, padding: '12px', borderBottom: `1px solid ${T.borderSubtle}`, verticalAlign: 'middle' },
+  statusDot: (active) => ({ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: active ? T.success : T.subtle, flexShrink: 0 }),
   badge: (role) => {
     const colors = {
-      super_admin: { bg: '#f0edff', color: '#5b3fd4' },
+      super_admin: { bg: 'color-mix(in srgb, #7c5cff 18%, var(--surface))', color: 'color-mix(in srgb, #7c5cff 75%, var(--text))' },
       admin: { bg: T.brandLight, color: T.brand },
-      manager: { bg: '#f0faf4', color: T.success },
-      employee: { bg: T.bg, color: T.muted },
-      none: { bg: T.bg, color: T.subtle },
+      manager: { bg: T.successBg, color: T.success },
+      employee: { bg: T.hoverBg, color: T.muted },
     }
-    const c = colors[role] || colors.none
-    return { fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '5px', background: c.bg, color: c.color, letterSpacing: '0.1px' }
-  }
+    const c = colors[role] || colors.employee
+    return { fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '99px', background: c.bg, color: c.color, whiteSpace: 'nowrap' }
+  },
+  muted: { fontSize: '12px', color: T.muted },
 }
 
-const TAB_MAP = {
-  'super-admin-users': 'Users',
-  'super-admin-audit': 'Audit Log',
-  'super-admin-settings': 'System Settings',
-}
+const TAB_ITEMS = [
+  { id: 'super-admin-users', label: 'Users' },
+  { id: 'super-admin-audit', label: 'Audit log' },
+  { id: 'super-admin-settings', label: 'Settings' },
+]
 
 export default function SuperAdmin({ session, userProfile, currentPage, onNavigate }) {
   const { isMobile } = useWindowSize()
-  const tab = TAB_MAP[currentPage] || 'Users'
-
-  function setTab(t) { onNavigate(Object.keys(TAB_MAP).find(k => TAB_MAP[k] === t)) }
-
-  const p = isMobile ? '16px' : '40px'
+  const tab = TAB_ITEMS.some(t => t.id === currentPage) ? currentPage : 'super-admin-users'
+  const subtitle = {
+    'super-admin-users': 'Who can sign in, and what they can do.',
+    'super-admin-audit': 'A record of every significant change, newest first.',
+    'super-admin-settings': 'Addresses and options used across the app.',
+  }[tab]
 
   return (
     <Layout session={session} userProfile={userProfile} currentPage={currentPage} onNavigate={onNavigate}>
-      <div className="il-header" style={{ padding: isMobile ? '16px 16px 0' : '28px 40px 0', boxShadow: '0 1px 0 var(--border)', background: 'var(--surface)' }}>
-        <div style={{ fontSize: isMobile ? '18px' : '20px', fontWeight: 600, letterSpacing: '-0.5px', marginBottom: '16px', color: 'var(--text)' }}>System</div>
-        <div style={{ display: 'flex', gap: '0', overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', marginBottom: '-1px' }}>
-          {['Users', 'Audit Log', 'System Settings'].map(t => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              style={{
-                padding: isMobile ? '10px 14px' : '10px 18px',
-                fontSize: '13px', fontWeight: tab === t ? 600 : 400,
-                color: tab === t ? 'var(--brand)' : 'var(--muted)',
-                background: 'none', border: 'none',
-                borderBottom: tab === t ? '2px solid var(--brand)' : '2px solid transparent',
-                cursor: 'pointer', fontFamily: 'inherit',
-                whiteSpace: 'nowrap', flexShrink: 0,
-                transition: 'color 0.12s ease, border-color 0.12s ease',
-              }}
-            >{t}</button>
-          ))}
-        </div>
-      </div>
-
-      <div style={{ padding: isMobile ? '20px 16px' : '32px 40px', maxWidth: isMobile ? 'none' : '900px' }}>
-        {tab === 'Users' && <UsersTab isMobile={isMobile} p={p} />}
-        {tab === 'Audit Log' && <AuditLogTab isMobile={isMobile} />}
-        {tab === 'System Settings' && <SystemSettingsTab isMobile={isMobile} />}
+      <PageHeader
+        title="System"
+        subtitle={isMobile ? null : subtitle}
+        tabs={{ mode: 'nav', label: 'System sections', items: TAB_ITEMS, value: tab, onChange: onNavigate }}
+      />
+      <div style={{ padding: isMobile ? '20px 16px 40px' : '28px 40px 48px', maxWidth: isMobile ? 'none' : '980px' }}>
+        {tab === 'super-admin-users' && <UsersTab isMobile={isMobile} currentUserId={session?.user?.id} />}
+        {tab === 'super-admin-audit' && <AuditLogTab isMobile={isMobile} />}
+        {tab === 'super-admin-settings' && <SystemSettingsTab />}
       </div>
     </Layout>
   )
 }
 
-function UsersTab({ isMobile }) {
+function roleLabel(role) {
+  return role ? humanize(role) : 'No profile'
+}
+
+function UsersTab({ isMobile, currentUserId }) {
   const [users, setUsers] = useState([])
   const [allEmployees, setAllEmployees] = useState([])
   const [loading, setLoading] = useState(true)
@@ -129,13 +117,14 @@ function UsersTab({ isMobile }) {
   const [pendingInvite, setPendingInvite] = useState(null)
   const [pendingRole, setPendingRole] = useState(ROLE.EMPLOYEE)
   const [inviting, setInviting] = useState(false)
+  const [query, setQuery] = useState('')
+  const [confirm, setConfirm] = useState(null)
   const { toast, showToast, hideToast } = useToast()
 
   // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch functions are stable, mount-only fetch
   useEffect(() => { fetchUsers(); fetchAllEmployees() }, [])
 
   async function fetchUsers() {
-    setLoading(true)
     const { data, error } = await supabase.rpc('get_all_users_admin')
     if (error) showToast(handleSupabaseError(error, 'Failed to load users.'), 'error')
     else setUsers(data || [])
@@ -166,8 +155,9 @@ function UsersTab({ isMobile }) {
     }
   }
 
-  async function sendManualInvite() {
-    if (!inviteEmail.trim()) return
+  async function sendManualInvite(e) {
+    e?.preventDefault()
+    if (!inviteEmail.trim() || inviting) return
     setInviting(true)
     const { data, error } = await supabase.functions.invoke('invite-user', {
       body: { email: inviteEmail.trim(), role: inviteRole, brand: inviteBrand || null },
@@ -176,7 +166,7 @@ function UsersTab({ isMobile }) {
     if (error || data?.error) {
       showToast(data?.error || 'Failed to send invite.', 'error')
     } else {
-      showToast(`Invite sent to ${inviteEmail}`)
+      showToast(`Invite sent to ${inviteEmail.trim()}`)
       setInviteEmail('')
       setInviteRole(ROLE.EMPLOYEE)
       setInviteBrand('')
@@ -184,238 +174,228 @@ function UsersTab({ isMobile }) {
     }
   }
 
-  async function handleRoleChange(userId, newRole, userEmail) {
-    const { error } = await supabase.from('user_profiles').update({ role: newRole }).eq('id', userId)
-    if (error) {
-      showToast(handleSupabaseError(error, 'Failed to update role.'), 'error')
-    } else {
-      await logAudit('role_changed', 'user', userId, { user_email: userEmail, new_role: newRole })
-      showToast('Role updated')
-      fetchUsers()
-    }
+  // Access changes are easy to fat-finger in a dropdown and hard to notice
+  // afterwards, so each one is confirmed first.
+  function requestRoleChange(user, newRole) {
+    if (newRole === user.role) return
+    setConfirm({
+      title: 'Change access level?',
+      message: `${user.email} will go from ${roleLabel(user.role)} to ${roleLabel(newRole)}. ${ROLE_HINTS[newRole] || ''}`,
+      confirmLabel: `Make ${roleLabel(newRole).toLowerCase()}`,
+      confirmDanger: false,
+      onConfirm: async () => {
+        const { error } = await supabase.from('user_profiles').update({ role: newRole }).eq('id', user.id)
+        setConfirm(null)
+        if (error) { showToast(handleSupabaseError(error, 'Failed to update role.'), 'error'); return }
+        await logAudit('role_changed', 'user', user.id, { user_email: user.email, new_role: newRole })
+        showToast('Access updated')
+        fetchUsers()
+      },
+    })
   }
 
-  async function handleToggleDeactivated(userId, currentDeactivated, userEmail) {
-    const newDeactivated = !currentDeactivated
-    const { error } = await supabase.from('user_profiles').update({ deactivated: newDeactivated }).eq('id', userId)
-    if (error) {
-      showToast(handleSupabaseError(error, 'Failed to update user status.'), 'error')
-    } else {
-      await logAudit(newDeactivated ? 'user_deactivated' : 'user_reactivated', 'user', userId, { user_email: userEmail })
-      showToast(newDeactivated ? 'User deactivated' : 'User reactivated')
-      fetchUsers()
-    }
+  function requestToggleDeactivated(user) {
+    const deactivating = !user.deactivated
+    setConfirm({
+      title: deactivating ? 'Deactivate this account?' : 'Reactivate this account?',
+      message: deactivating
+        ? `${user.email} will be signed out of Integrated Launch and blocked from signing back in. You can reactivate them later.`
+        : `${user.email} will be able to sign in again with their existing access.`,
+      confirmLabel: deactivating ? 'Deactivate' : 'Reactivate',
+      confirmDanger: deactivating,
+      onConfirm: async () => {
+        const { error } = await supabase.from('user_profiles').update({ deactivated: deactivating }).eq('id', user.id)
+        setConfirm(null)
+        if (error) { showToast(handleSupabaseError(error, 'Failed to update user status.'), 'error'); return }
+        await logAudit(deactivating ? 'user_deactivated' : 'user_reactivated', 'user', user.id, { user_email: user.email })
+        showToast(deactivating ? 'User deactivated' : 'User reactivated')
+        fetchUsers()
+      },
+    })
   }
 
-  const inviteTabStyle = (active) => ({
-    padding: '8px 14px', fontSize: '12px', fontWeight: active ? 600 : 400,
-    color: active ? 'var(--brand)' : 'var(--muted)', background: 'none', border: 'none',
-    borderBottom: active ? '2px solid var(--brand)' : '2px solid transparent',
-    cursor: 'pointer', fontFamily: 'inherit', marginBottom: '-1px',
-    transition: 'color 0.12s ease, border-color 0.12s ease',
-  })
+  const q = query.trim().toLowerCase()
+  const visibleUsers = q
+    ? users.filter(u => [u.email, u.role, brandName(u.brand)].some(v => (v || '').toLowerCase().includes(q)))
+    : users
 
-  if (loading) return <div style={s.empty}>Loading...</div>
+  function roleControl(u) {
+    const isSelf = u.id === currentUserId
+    if (u.role === ROLE.SUPER_ADMIN || !u.role || u.role === 'none') return <span style={s.badge(u.role)}>{roleLabel(u.role)}</span>
+    return (
+      <select className="il-input" aria-label={`Access level for ${u.email}`} disabled={isSelf}
+        style={{ width: 'auto', padding: '5px 8px', fontSize: '12px' }}
+        value={u.role} onChange={e => requestRoleChange(u, e.target.value)}>
+        {CHANGEABLE_ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
+      </select>
+    )
+  }
+
+  function statusControl(u) {
+    if (u.role === ROLE.SUPER_ADMIN || !u.role || u.role === 'none' || u.id === currentUserId) return null
+    return (
+      <Button size="xs" variant={u.deactivated ? 'secondary' : 'danger-outline'} onClick={() => requestToggleDeactivated(u)}>
+        {u.deactivated ? 'Reactivate' : 'Deactivate'}
+      </Button>
+    )
+  }
+
+  const status = (u) => (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: u.deactivated ? T.muted : T.success, fontWeight: 500 }}>
+      <span style={s.statusDot(!u.deactivated)} aria-hidden="true" />{u.deactivated ? 'Deactivated' : 'Active'}
+    </span>
+  )
 
   return (
     <>
       {/* ── Invite panel ── */}
-      <div style={{ marginBottom: '28px', border: '1px solid var(--border)', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.04), 0 2px 10px rgba(0,0,0,0.03)' }}>
+      <section style={{ ...s.card, marginBottom: '20px', overflow: 'hidden' }}>
         <button
+          type="button"
+          aria-expanded={showInvitePanel}
           onClick={() => setShowInvitePanel(o => !o)}
-          style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', background: showInvitePanel ? '#f9f8f5' : '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+          className="il-btn-ghost"
+          style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '14px 18px', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', color: T.text }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text)' }}>Invite a user</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', textAlign: 'left' }}>
+            <span style={{ fontSize: '13px', fontWeight: 600 }}>Invite someone</span>
             {unlinkedEmployees.length > 0 && (
-              <span style={{ fontSize: '11px', fontWeight: 600, background: '#eff6ff', color: 'var(--brand)', padding: '1px 8px', borderRadius: '99px' }}>
-                {unlinkedEmployees.length} employee{unlinkedEmployees.length !== 1 ? 's' : ''} without login
+              <span style={{ fontSize: '11px', fontWeight: 600, background: T.brandLight, color: T.brand, padding: '2px 8px', borderRadius: '99px' }}>
+                {unlinkedEmployees.length} employee{unlinkedEmployees.length !== 1 ? 's' : ''} without a login
               </span>
             )}
-          </div>
-          <span style={{ fontSize: '11px', color: 'var(--subtle)', flexShrink: 0 }}>{showInvitePanel ? '▲' : '▼'}</span>
+          </span>
+          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" style={{ color: T.subtle, transform: showInvitePanel ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}>
+            <path d="M1.5 3.5L5 7l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
         </button>
 
         {showInvitePanel && (
-          <div style={{ borderTop: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', padding: '0 20px', borderBottom: '1px solid var(--border)', overflowX: 'auto' }}>
-              <button style={inviteTabStyle(inviteMode === 'employees')} onClick={() => setInviteMode('employees')}>
-                Employees without login ({unlinkedEmployees.length})
-              </button>
-              <button style={inviteTabStyle(inviteMode === 'manual')} onClick={() => setInviteMode('manual')}>
-                Invite by email
-              </button>
+          <div className="il-tab-content" style={{ borderTop: `1px solid ${T.border}`, padding: '16px 18px' }}>
+            <div style={{ marginBottom: '14px' }}>
+              <Segmented size="sm" label="How to invite" value={inviteMode} onChange={setInviteMode} options={[
+                { value: 'employees', label: `Employees without a login (${unlinkedEmployees.length})` },
+                { value: 'manual', label: 'By email' },
+              ]} />
             </div>
 
-            <div style={{ padding: '16px 20px' }}>
-              {inviteMode === 'employees' && (
-                unlinkedEmployees.length === 0 ? (
-                  <div style={{ fontSize: '13px', color: 'var(--subtle)', padding: '8px 0' }}>All employees already have a login.</div>
-                ) : (
-                  unlinkedEmployees.map(emp => (
-                    <div key={emp.id} style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '10px' : '12px', padding: '10px 0', borderBottom: '1px solid var(--border-subtle)' }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text)' }}>{emp.full_name}</div>
-                        <div style={{ fontSize: '12px', color: 'var(--muted)' }}>{emp.email}{emp.brand ? ` · ${emp.brand}` : ''}</div>
-                      </div>
-                      {pendingInvite === emp.id ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                          <select value={pendingRole} onChange={e => setPendingRole(e.target.value)} style={s.select}>
-                            {CHANGEABLE_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
-                          </select>
-                          <button onClick={() => sendInviteToEmployee(emp, pendingRole)} disabled={inviting}
-                            style={{ ...s.btnSmall(false), background: T.btnPrimaryBg, color: '#fff', border: 'none' }}>
-                            {inviting ? 'Sending…' : 'Confirm & send'}
-                          </button>
-                          <button onClick={() => setPendingInvite(null)} style={s.btnSmall(false)}>Cancel</button>
-                        </div>
-                      ) : (
-                        <button onClick={() => { setPendingInvite(emp.id); setPendingRole(ROLE.EMPLOYEE) }} style={s.btnSmall(false)}>
-                          Send invite
-                        </button>
-                      )}
+            {inviteMode === 'employees' && (
+              unlinkedEmployees.length === 0 ? (
+                <div style={{ fontSize: '13px', color: T.subtle, padding: '4px 0' }}>Every employee already has a login.</div>
+              ) : (
+                unlinkedEmployees.map(emp => (
+                  <div key={emp.id} style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '10px' : '12px', padding: '10px 0', borderBottom: `1px solid ${T.borderSubtle}` }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '13px', fontWeight: 500, color: T.text }}>{emp.full_name}</div>
+                      <div style={s.muted}>{emp.email || 'No email on file'}{emp.brand ? ` · ${brandName(emp.brand)}` : ''}</div>
                     </div>
-                  ))
-                )
-              )}
+                    {pendingInvite === emp.id ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <select className="il-input" aria-label={`Access level for ${emp.full_name}`} style={{ width: 'auto', padding: '5px 8px', fontSize: '12px' }} value={pendingRole} onChange={e => setPendingRole(e.target.value)}>
+                          {CHANGEABLE_ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
+                        </select>
+                        <Button size="xs" busy={inviting} busyLabel="Sending…" onClick={() => sendInviteToEmployee(emp, pendingRole)}>Send invite</Button>
+                        <Button size="xs" variant="ghost" onClick={() => setPendingInvite(null)}>Cancel</Button>
+                      </div>
+                    ) : (
+                      <Button size="xs" variant="secondary" disabled={!emp.email} title={emp.email ? undefined : 'Add an email to this employee first'}
+                        onClick={() => { setPendingInvite(emp.id); setPendingRole(ROLE.EMPLOYEE) }}>
+                        Invite…
+                      </Button>
+                    )}
+                  </div>
+                ))
+              )
+            )}
 
-              {inviteMode === 'manual' && (
-                <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '8px', flexWrap: 'wrap', alignItems: isMobile ? 'stretch' : 'flex-end' }}>
-                  <div style={{ flex: isMobile ? 'none' : undefined }}>
-                    <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>Email</div>
-                    <input type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && sendManualInvite()}
-                      placeholder="name@example.com"
-                      style={{ border: '1px solid var(--border)', borderRadius: '7px', padding: '7px 10px', fontSize: '13px', fontFamily: 'inherit', outline: 'none', width: isMobile ? '100%' : 'auto', minWidth: isMobile ? 'none' : '220px', color: 'var(--text)', boxSizing: 'border-box' }} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>Role</div>
-                    <select value={inviteRole} onChange={e => setInviteRole(e.target.value)} style={{ ...s.filterSelect, width: isMobile ? '100%' : 'auto' }}>
-                      {CHANGEABLE_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>Brand</div>
-                    <select value={inviteBrand} onChange={e => setInviteBrand(e.target.value)} style={{ ...s.filterSelect, width: isMobile ? '100%' : 'auto' }}>
-                      <option value="">—</option>
-                      <option value="ISL">ISL</option>
-                      <option value="AS">AS</option>
-                      <option value="ADS">ADS</option>
-                    </select>
-                  </div>
-                  <button onClick={sendManualInvite} disabled={inviting || !inviteEmail.trim()}
-                    style={{ background: T.btnPrimaryBg, color: '#fff', border: 'none', borderRadius: '8px', padding: '8px 16px', fontSize: '13px', fontWeight: 500, cursor: inviting || !inviteEmail.trim() ? 'default' : 'pointer', fontFamily: 'inherit', opacity: inviting || !inviteEmail.trim() ? 0.5 : 1 }}>
-                    {inviting ? 'Sending…' : 'Send invite'}
-                  </button>
+            {inviteMode === 'manual' && (
+              <form onSubmit={sendManualInvite} noValidate style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1.2fr) auto', gap: '0 10px', alignItems: 'end' }}>
+                <Field label="Email"><input type="email" placeholder="name@integratedstaffing.ca" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} /></Field>
+                <Field label="Access">
+                  <select value={inviteRole} onChange={e => setInviteRole(e.target.value)}>
+                    {CHANGEABLE_ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
+                  </select>
+                </Field>
+                <Field label="Agency" optional>
+                  <select value={inviteBrand} onChange={e => setInviteBrand(e.target.value)}>
+                    <option value="">None</option>
+                    {BRANDS.map(b => <option key={b.code} value={b.code}>{b.name}</option>)}
+                  </select>
+                </Field>
+                <div style={{ marginBottom: '18px' }}>
+                  <Button type="submit" busy={inviting} busyLabel="Sending…" disabled={!inviteEmail.trim()}>Send invite</Button>
                 </div>
-              )}
-            </div>
+              </form>
+            )}
           </div>
         )}
-      </div>
+      </section>
 
       {/* ── Users list ── */}
-      {isMobile ? (
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 240px', maxWidth: '320px' }}>
+          <SearchInput value={query} onChange={setQuery} placeholder="Search by email, access or agency" label="Search users" />
+        </div>
+        {!loading && <span aria-live="polite" style={{ fontSize: '12px', color: T.subtle, marginLeft: 'auto' }}>{visibleUsers.length} of {users.length} users</span>}
+      </div>
+
+      {loading ? (
+        <div style={{ ...s.card, padding: '8px 16px' }} aria-busy="true">
+          {[1, 2, 3, 4].map(i => <div key={i} style={{ padding: '14px 0', borderBottom: `1px solid ${T.borderSubtle}` }}><SkeletonLine width={`${35 + i * 10}%`} /></div>)}
+        </div>
+      ) : visibleUsers.length === 0 ? (
+        <div style={s.card}><EmptyState icon={EmptyIcons.search} title={users.length ? 'No matches' : 'No users yet'} message={users.length ? `Nobody matches “${query}”.` : 'Invite someone above to get started.'} /></div>
+      ) : isMobile ? (
         <div>
-          {users.map(u => (
-            <div key={u.id} style={{ border: '1px solid var(--border)', borderRadius: '10px', padding: '14px', marginBottom: '10px', background: 'var(--surface)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+          {visibleUsers.map(u => (
+            <div key={u.id} style={{ ...s.card, padding: '14px', marginBottom: '10px' }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', marginBottom: '10px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                  <span style={s.statusDot(!u.deactivated)} />
-                  <div style={{ fontSize: '13px', color: 'var(--text)', wordBreak: 'break-all', lineHeight: '1.4' }}>{u.email}</div>
-                </div>
-                <span style={{ fontSize: '11px', color: u.deactivated ? '#c04040' : '#1a7a4a', fontWeight: 500, flexShrink: 0 }}>
-                  {u.deactivated ? 'Deactivated' : 'Active'}
-                </span>
+                <div style={{ fontSize: '13px', color: T.text, wordBreak: 'break-all', lineHeight: 1.4, fontWeight: 500 }}>{u.email}</div>
+                {status(u)}
               </div>
-
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
-                {u.role === ROLE.SUPER_ADMIN ? (
-                  <span style={s.badge(ROLE.SUPER_ADMIN)}>super_admin</span>
-                ) : (
-                  <select
-                    style={s.select}
-                    value={u.role || 'none'}
-                    onChange={e => handleRoleChange(u.id, e.target.value, u.email)}
-                    disabled={!u.role || u.role === 'none'}
-                  >
-                    {!u.role || u.role === 'none'
-                      ? <option value="none">No profile</option>
-                      : CHANGEABLE_ROLES.map(r => <option key={r} value={r}>{r}</option>)
-                    }
-                  </select>
-                )}
-                {u.brand && <span style={{ fontSize: '11px', color: 'var(--muted)', background: 'var(--bg)', borderRadius: '4px', padding: '2px 6px' }}>{u.brand}</span>}
+                {roleControl(u)}
+                {u.brand && <span style={s.muted}>{brandName(u.brand)}</span>}
               </div>
-
-              <div style={{ fontSize: '11px', color: 'var(--subtle)', marginBottom: '10px' }}>
-                Joined {u.created_at ? new Date(u.created_at).toLocaleDateString('en-CA') : '—'} · Last login {u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleDateString('en-CA') : 'Never'}
+              <div style={{ fontSize: '11px', color: T.subtle, marginBottom: statusControl(u) ? '10px' : 0 }}>
+                Joined {u.created_at ? formatDate(u.created_at, { month: 'short', day: 'numeric', year: 'numeric' }) : '—'} · Last sign-in {u.last_sign_in_at ? formatDate(u.last_sign_in_at, { month: 'short', day: 'numeric', year: 'numeric' }) : 'never'}
               </div>
-
-              {u.role !== ROLE.SUPER_ADMIN && u.role && u.role !== 'none' && (
-                <button style={s.btnSmall(u.deactivated ? false : true)} onClick={() => handleToggleDeactivated(u.id, u.deactivated, u.email)}>
-                  {u.deactivated ? 'Reactivate' : 'Deactivate'}
-                </button>
-              )}
+              {statusControl(u)}
             </div>
           ))}
         </div>
       ) : (
-        <table style={s.table}>
-          <thead>
-            <tr>
-              <th style={s.th}>User</th>
-              <th style={s.th}>Role</th>
-              <th style={s.th}>Brand</th>
-              <th style={s.th}>Created</th>
-              <th style={s.th}>Last sign in</th>
-              <th style={s.th}>Status</th>
-              <th style={s.th}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map(u => (
-              <tr key={u.id}>
-                <td style={s.td}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={s.statusDot(!u.deactivated)} />
-                    <div style={{ fontSize: 13, color: 'var(--text)' }}>{u.email}</div>
-                  </div>
-                </td>
-                <td style={s.td}>
-                  {u.role === ROLE.SUPER_ADMIN ? (
-                    <span style={s.badge(ROLE.SUPER_ADMIN)}>super_admin</span>
-                  ) : (
-                    <select
-                      style={s.select}
-                      value={u.role || 'none'}
-                      onChange={e => handleRoleChange(u.id, e.target.value, u.email)}
-                      disabled={!u.role || u.role === 'none'}
-                    >
-                      {!u.role || u.role === 'none'
-                        ? <option value="none">No profile</option>
-                        : CHANGEABLE_ROLES.map(r => <option key={r} value={r}>{r}</option>)
-                      }
-                    </select>
-                  )}
-                </td>
-                <td style={s.td}><span style={{ fontSize: 12, color: 'var(--muted)' }}>{u.brand || '—'}</span></td>
-                <td style={s.td}><span style={{ fontSize: 12, color: 'var(--muted)' }}>{u.created_at ? new Date(u.created_at).toLocaleDateString('en-CA') : '—'}</span></td>
-                <td style={s.td}><span style={{ fontSize: 12, color: 'var(--muted)' }}>{u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleDateString('en-CA') : 'Never'}</span></td>
-                <td style={s.td}><span style={{ fontSize: 12, color: u.deactivated ? '#c04040' : '#1a7a4a', fontWeight: 500 }}>{u.deactivated ? 'Deactivated' : 'Active'}</span></td>
-                <td style={s.td}>
-                  {u.role !== ROLE.SUPER_ADMIN && u.role && u.role !== 'none' && (
-                    <button style={s.btnSmall(u.deactivated ? false : true)} onClick={() => handleToggleDeactivated(u.id, u.deactivated, u.email)}>
-                      {u.deactivated ? 'Reactivate' : 'Deactivate'}
-                    </button>
-                  )}
-                </td>
+        <div style={{ ...s.card, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={s.th} scope="col">User</th>
+                <th style={s.th} scope="col">Access</th>
+                <th style={s.th} scope="col">Agency</th>
+                <th style={s.th} scope="col">Last sign-in</th>
+                <th style={s.th} scope="col">Status</th>
+                <th style={s.th} scope="col"><span className="il-visually-hidden">Actions</span></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {visibleUsers.map(u => (
+                <tr key={u.id} className="il-row">
+                  <td style={s.td}>
+                    <div style={{ fontWeight: 500 }}>{u.email}{u.id === currentUserId && <span style={{ ...s.muted, fontWeight: 400 }}> (you)</span>}</div>
+                    <div style={{ fontSize: '11px', color: T.subtle, marginTop: '2px' }}>Joined {u.created_at ? formatDate(u.created_at, { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</div>
+                  </td>
+                  <td style={s.td}>{roleControl(u)}</td>
+                  <td style={{ ...s.td, ...s.muted }}>{brandName(u.brand) || '—'}</td>
+                  <td style={{ ...s.td, ...s.muted }} className="il-tabular">{u.last_sign_in_at ? formatDate(u.last_sign_in_at, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Never'}</td>
+                  <td style={s.td}>{status(u)}</td>
+                  <td style={{ ...s.td, textAlign: 'right' }}>{statusControl(u)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
-      {users.length === 0 && <div style={s.empty}>No users found.</div>}
+      {confirm && <ConfirmModal {...confirm} onCancel={() => setConfirm(null)} />}
       {toast && <Toast key={toast.id} message={toast.message} type={toast.type} onClose={hideToast} />}
     </>
   )
@@ -428,6 +408,7 @@ function AuditLogTab({ isMobile }) {
   const [filterFrom, setFilterFrom] = useState('')
   const [filterTo, setFilterTo] = useState('')
   const [logLimit, setLogLimit] = useState(100)
+  const { toast, showToast, hideToast } = useToast()
 
   const fetchLogs = useCallback(async () => {
     setLoading(true)
@@ -438,106 +419,109 @@ function AuditLogTab({ isMobile }) {
       .limit(logLimit)
 
     if (filterAction) query = query.eq('action', filterAction)
-    if (filterFrom) query = query.gte('created_at', filterFrom + 'T00:00:00')
-    if (filterTo) query = query.lte('created_at', filterTo + 'T23:59:59')
+    // Date filters are local calendar days, converted to exact instants so the
+    // database compares them correctly (not as UTC midnight).
+    if (filterFrom) query = query.gte('created_at', new Date(`${filterFrom}T00:00:00`).toISOString())
+    if (filterTo) query = query.lte('created_at', new Date(`${filterTo}T23:59:59.999`).toISOString())
 
-    const { data } = await query
+    const { data, error } = await query
+    if (error) showToast(handleSupabaseError(error, 'Failed to load the audit log.'), 'error')
     setLogs(data || [])
     setLoading(false)
-  }, [filterAction, filterFrom, filterTo, logLimit])
+  }, [filterAction, filterFrom, filterTo, logLimit, showToast])
 
   useEffect(() => { fetchLogs() }, [fetchLogs])
 
   function formatTime(ts) {
     if (!ts) return '—'
-    if (isMobile) {
-      return new Date(ts).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })
-    }
-    return new Date(ts).toLocaleString('en-CA', {
-      month: 'short', day: 'numeric', year: 'numeric',
-      hour: '2-digit', minute: '2-digit',
-    })
+    return new Date(ts).toLocaleString('en-CA', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
   }
 
+  // A human description of what an entry touched, from whatever the logger
+  // recorded (names are more useful than ids).
   function describeEntity(log) {
-    if (!log.entity_type && !log.entity_id) return null
+    const m = log.metadata || {}
     const parts = []
-    if (log.entity_type) parts.push(log.entity_type)
-    if (log.metadata?.user_email) parts.push(log.metadata.user_email)
-    else if (log.entity_id && log.entity_id.length < 40) parts.push(log.entity_id)
-    if (log.metadata?.new_role) parts.push(`→ ${log.metadata.new_role}`)
-    if (log.metadata?.value) parts.push(`"${log.metadata.value}"`)
+    const subject = m.employee_name || m.user_email || m.role_name || m.document_name || m.task_name
+    if (subject) parts.push(subject)
+    if (m.task_name && m.task_name !== subject) parts.push(`“${m.task_name}”`)
+    if (m.new_role) parts.push(`→ ${roleLabel(m.new_role)}`)
+    if (m.role && !m.new_role) parts.push(m.role)
+    if (m.type) parts.push(humanize(m.type))
+    if (m.days) parts.push(`${m.days}d`)
+    if (log.action === 'system_setting_updated') parts.push(`${humanize(log.entity_id || '')}: “${m.value ?? ''}”`)
+    if (parts.length === 0 && log.entity_type) parts.push(humanize(log.entity_type))
     return parts.join(' · ')
   }
 
+  const hasFilters = filterAction || filterFrom || filterTo
+
   return (
     <>
-      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap' }}>
-        <select style={{ ...s.filterSelect, flex: isMobile ? '1 1 100%' : undefined }} value={filterAction} onChange={e => { setFilterAction(e.target.value); setLogLimit(100) }}>
+      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap' }}>
+        <select className="il-input" aria-label="Filter by action" style={{ width: isMobile ? '100%' : 'auto', minWidth: '200px' }} value={filterAction} onChange={e => { setFilterAction(e.target.value); setLogLimit(100) }}>
           <option value="">All actions</option>
-          {Object.entries(ACTION_LABELS).map(([k, v]) => (
+          {Object.entries(ACTION_LABELS).sort((a, b) => a[1].localeCompare(b[1])).map(([k, v]) => (
             <option key={k} value={k}>{v}</option>
           ))}
         </select>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', flex: isMobile ? '1 1 100%' : undefined }}>
-          <input style={{ ...s.filterInput, flex: 1, minWidth: '120px' }} type="date" value={filterFrom} onChange={e => { setFilterFrom(e.target.value); setLogLimit(100) }} />
-          <span style={{ fontSize: 12, color: 'var(--subtle)', flexShrink: 0 }}>to</span>
-          <input style={{ ...s.filterInput, flex: 1, minWidth: '120px' }} type="date" value={filterTo} onChange={e => { setFilterTo(e.target.value); setLogLimit(100) }} />
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: isMobile ? '1 1 100%' : undefined }}>
+          <input className="il-input" aria-label="From date" style={{ flex: 1, width: 'auto', minWidth: '130px' }} type="date" value={filterFrom} onChange={e => { setFilterFrom(e.target.value); setLogLimit(100) }} />
+          <span style={{ fontSize: 12, color: T.subtle, flexShrink: 0 }}>to</span>
+          <input className="il-input" aria-label="To date" style={{ flex: 1, width: 'auto', minWidth: '130px' }} type="date" value={filterTo} min={filterFrom || undefined} onChange={e => { setFilterTo(e.target.value); setLogLimit(100) }} />
         </div>
-        {(filterAction || filterFrom || filterTo) && (
-          <button
-            style={{ fontSize: 12, color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
-            onClick={() => { setFilterAction(''); setFilterFrom(''); setFilterTo(''); setLogLimit(100) }}
-          >Clear</button>
+        {hasFilters && (
+          <Button size="sm" variant="ghost" onClick={() => { setFilterAction(''); setFilterFrom(''); setFilterTo(''); setLogLimit(100) }}>Clear filters</Button>
         )}
       </div>
 
-      {loading ? (
-        <div style={s.empty}>Loading...</div>
-      ) : logs.length === 0 ? (
-        <div style={s.empty}>No audit log entries yet.</div>
-      ) : (
-        <>
-          {logs.map(log => {
-            const entity = describeEntity(log)
-            return isMobile ? (
-              <div key={log.id} style={{ padding: '12px 0', borderBottom: '1px solid var(--border-subtle)' }}>
-                <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text)', marginBottom: '3px' }}>
-                  {ACTION_LABELS[log.action] || log.action}
-                </div>
-                {entity && <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>{entity}</div>}
-                <div style={{ fontSize: '11px', color: 'var(--subtle)' }}>
-                  {formatTime(log.created_at)} · {log.user_email || 'Unknown'}
-                </div>
-              </div>
-            ) : (
-              <div key={log.id} style={{ display: 'flex', gap: '16px', padding: '12px 0', borderBottom: '1px solid var(--border-subtle)', alignItems: 'flex-start' }}>
-                <div style={{ fontSize: '12px', color: 'var(--subtle)', whiteSpace: 'nowrap', minWidth: '140px' }}>{formatTime(log.created_at)}</div>
-                <div style={{ fontSize: '12px', color: 'var(--muted)', minWidth: '160px' }}>{log.user_email || 'Unknown'}</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: '13px', color: 'var(--text)', fontWeight: 500 }}>{ACTION_LABELS[log.action] || log.action}</div>
-                  {entity && <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '2px' }}>{entity}</div>}
-                </div>
-              </div>
-            )
-          })}
-          {logs.length >= logLimit && (
-            <button
-              onClick={() => setLogLimit(l => l + 100)}
-              style={{ fontSize: '13px', color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '16px 0', display: 'block', width: '100%', textAlign: 'center' }}>
-              Load more
-            </button>
-          )}
-        </>
+      <div style={{ ...s.card, overflow: 'hidden' }}>
+        {loading && logs.length === 0 ? (
+          <div style={{ padding: '8px 16px' }} aria-busy="true">
+            {[1, 2, 3, 4, 5].map(i => <div key={i} style={{ padding: '14px 0', borderBottom: `1px solid ${T.borderSubtle}` }}><SkeletonLine width={`${30 + i * 9}%`} /></div>)}
+          </div>
+        ) : logs.length === 0 ? (
+          <EmptyState icon={EmptyIcons.list} title={hasFilters ? 'No matching entries' : 'No audit entries yet'} message={hasFilters ? 'Try widening the dates or clearing the action filter.' : 'Changes people make will be recorded here.'} />
+        ) : (
+          <ol style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+            {logs.map(log => {
+              const entity = describeEntity(log)
+              return (
+                <li key={log.id} style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '3px' : '16px', padding: '12px 16px', borderBottom: `1px solid ${T.borderSubtle}`, alignItems: isMobile ? 'stretch' : 'baseline' }}>
+                  {!isMobile && <time dateTime={log.created_at} className="il-tabular" style={{ fontSize: '12px', color: T.subtle, whiteSpace: 'nowrap', width: '160px', flexShrink: 0 }}>{formatTime(log.created_at)}</time>}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: '13px', color: T.text, fontWeight: 500 }}>{ACTION_LABELS[log.action] || humanize(log.action)}</div>
+                    {entity && <div style={{ fontSize: '12px', color: T.muted, marginTop: '2px', overflowWrap: 'anywhere' }}>{entity}</div>}
+                  </div>
+                  <div style={{ fontSize: '12px', color: T.muted, flexShrink: 0, maxWidth: isMobile ? 'none' : '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {isMobile && <>{formatTime(log.created_at)} · </>}{log.user_email || 'Unknown user'}
+                  </div>
+                </li>
+              )
+            })}
+          </ol>
+        )}
+      </div>
+      {logs.length >= logLimit && (
+        <div style={{ textAlign: 'center', padding: '16px 0' }}>
+          <Button variant="secondary" size="sm" busy={loading} busyLabel="Loading…" onClick={() => setLogLimit(l => l + 100)}>Load more</Button>
+        </div>
       )}
+      {toast && <Toast key={toast.id} message={toast.message} type={toast.type} onClose={hideToast} />}
     </>
   )
 }
 
-function SystemSettingsTab({ isMobile }) {
+const SETTING_META = {
+  hr_notification_email: { label: 'HR notification email', hint: 'Receives new-onboarding, completion and time-off notifications.', type: 'email' },
+  tech_support_email: { label: 'Tech support email', hint: 'Receives tech support tickets from the employee portal.', type: 'email' },
+}
+
+function SystemSettingsTab() {
   const [settings, setSettings] = useState([])
   const [values, setValues] = useState({})
   const [saving, setSaving] = useState({})
+  const [loading, setLoading] = useState(true)
   const { toast, showToast, hideToast } = useToast()
 
   // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchSettings is stable, mount-only fetch
@@ -550,57 +534,66 @@ function SystemSettingsTab({ isMobile }) {
     } else if (data) {
       setSettings(data)
       const v = {}
-      data.forEach(s => { v[s.key] = s.value })
+      data.forEach(row => { v[row.key] = row.value })
       setValues(v)
     }
+    setLoading(false)
   }
 
   async function handleSave(key) {
+    const meta = SETTING_META[key]
+    const value = (values[key] ?? '').trim()
+    if (meta?.type === 'email' && value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+      showToast('Enter a valid email address.', 'error')
+      return
+    }
     setSaving(prev => ({ ...prev, [key]: true }))
     const { error } = await supabase
       .from('system_settings')
-      .update({ value: values[key], updated_at: new Date().toISOString() })
+      .update({ value, updated_at: new Date().toISOString() })
       .eq('key', key)
     if (error) {
       showToast(handleSupabaseError(error, 'Failed to save setting.'), 'error')
     } else {
-      await logAudit('system_setting_updated', 'system_settings', key, { value: values[key] })
+      await logAudit('system_setting_updated', 'system_settings', key, { value })
       // Notification senders cache these; drop the cache so the new address
       // is used right away rather than after the next page load.
       clearSettingsCache()
+      setSettings(prev => prev.map(row => row.key === key ? { ...row, value } : row))
       showToast('Setting saved')
     }
     setSaving(prev => ({ ...prev, [key]: false }))
   }
 
   function labelFor(key) {
-    if (key === 'hr_notification_email') return 'HR notification email'
-    return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+    return SETTING_META[key]?.label || humanize(key)
   }
 
   return (
-    <>
-      {settings.map(setting => (
-        <div key={setting.key} style={{ padding: '16px 0', borderBottom: '1px solid var(--border-subtle)' }}>
-          <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text)', marginBottom: isMobile ? '10px' : '0' }}>
-            {labelFor(setting.key)}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: isMobile ? '0' : '10px', flexWrap: isMobile ? 'nowrap' : 'wrap' }}>
-            <input
-              style={{ flex: 1, border: '1px solid var(--border)', borderRadius: '7px', padding: '8px 12px', fontSize: '13px', fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--text)', outline: 'none', minWidth: 0, boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}
-              type="text"
-              value={values[setting.key] ?? ''}
-              onChange={e => setValues(prev => ({ ...prev, [setting.key]: e.target.value }))}
-              onKeyDown={e => e.key === 'Enter' && handleSave(setting.key)}
-            />
-            <button style={s.btnSave} onClick={() => handleSave(setting.key)} disabled={saving[setting.key]}>
-              {saving[setting.key] ? 'Saving…' : 'Save'}
-            </button>
-          </div>
-        </div>
-      ))}
-      {settings.length === 0 && <div style={s.empty}>No settings configured.</div>}
+    <div style={{ ...s.card, padding: '4px 20px', maxWidth: '640px' }}>
+      {loading ? (
+        <div aria-busy="true">{[1, 2].map(i => <div key={i} style={{ padding: '18px 0', borderBottom: `1px solid ${T.borderSubtle}` }}><SkeletonLine width="40%" style={{ marginBottom: '10px' }} /><SkeletonLine height="34px" /></div>)}</div>
+      ) : settings.length === 0 ? (
+        <EmptyState icon={EmptyIcons.list} title="No settings configured" message="Settings rows are created in the database." />
+      ) : settings.map((setting, i) => {
+        const dirty = (values[setting.key] ?? '') !== (setting.value ?? '')
+        return (
+          <form key={setting.key} onSubmit={e => { e.preventDefault(); handleSave(setting.key) }}
+            style={{ padding: '16px 0 0', borderBottom: i < settings.length - 1 ? `1px solid ${T.borderSubtle}` : 'none' }}>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+              <Field label={labelFor(setting.key)} hint={SETTING_META[setting.key]?.hint} style={{ flex: 1 }}>
+                <input type={SETTING_META[setting.key]?.type || 'text'} value={values[setting.key] ?? ''}
+                  onChange={e => setValues(prev => ({ ...prev, [setting.key]: e.target.value }))} />
+              </Field>
+              {/* Label height (~21px) + half the height difference to the input */}
+              <div style={{ marginTop: '22px' }}>
+                <Button type="submit" variant={dirty ? 'primary' : 'secondary'} disabled={!dirty} busy={saving[setting.key]} busyLabel="Saving…">Save</Button>
+              </div>
+            </div>
+          </form>
+        )
+      })}
       {toast && <Toast key={toast.id} message={toast.message} type={toast.type} onClose={hideToast} />}
-    </>
+    </div>
   )
 }
