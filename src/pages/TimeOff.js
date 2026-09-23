@@ -382,17 +382,20 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
   const REQ_COLS = '1.4fr 1fr 90px 60px 100px 80px 170px'
   const BAL_COLS = '1.6fr 90px 90px 90px 90px 100px'
 
-  function SortIndicator({ field }) {
+  // Plain render helpers, not components: a component defined inside this one
+  // is a new type on every render, so React would remount it each keystroke
+  // (the mobile review-notes field lost focus after every character).
+  function sortIndicator(field) {
     if (sortField !== field) return <span style={{ color: '#e2e1dd', fontSize: '9px', marginLeft: '3px' }}>⬍</span>
     return <span style={{ color: 'var(--muted)', fontSize: '9px', marginLeft: '3px' }}>{sortDir === 'asc' ? '▲' : '▼'}</span>
   }
 
-  function RequestCard({ req }) {
+  function renderRequestCard(req) {
     const remaining = getRemainingAfterApproval(req)
     const overlapNames = getOverlapNames(req)
     const busy = reviewingId === req.id
     return (
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '10px', padding: '14px 16px', marginBottom: '10px' }}>
+      <div key={req.id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '10px', padding: '14px 16px', marginBottom: '10px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
           <div>
             <div style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text)' }}>{req.employee?.full_name || '—'}</div>
@@ -486,15 +489,15 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
                 {requests.length === 0 ? 'No time off requests yet.' : 'No requests match your filters.'}
               </div>
             ) : isMobile ? (
-              displayRequests.map(req => <RequestCard key={req.id} req={req} />)
+              displayRequests.map(renderRequestCard)
             ) : (
               <div style={s.card}>
                 <div style={s.tHead(REQ_COLS)}>
-                  <div style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('employee_name')}>Employee<SortIndicator field="employee_name" /></div>
-                  <div style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('start_date')}>Dates<SortIndicator field="start_date" /></div>
+                  <div style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('employee_name')}>Employee{sortIndicator('employee_name')}</div>
+                  <div style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('start_date')}>Dates{sortIndicator('start_date')}</div>
                   <div>Type</div>
-                  <div style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('business_days')}>Days<SortIndicator field="business_days" /></div>
-                  <div style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('status')}>Status<SortIndicator field="status" /></div>
+                  <div style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('business_days')}>Days{sortIndicator('business_days')}</div>
+                  <div style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort('status')}>Status{sortIndicator('status')}</div>
                   <div>After approval</div>
                   <div>Actions</div>
                 </div>
@@ -894,7 +897,7 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
           </div>
         )}
       </div>
-      {toast && <Toast message={toast.message} type={toast.type} onClose={hideToast} />}
+      {toast && <Toast key={toast.id} message={toast.message} type={toast.type} onClose={hideToast} />}
     </Layout>
   )
 }

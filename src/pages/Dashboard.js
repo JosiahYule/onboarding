@@ -12,6 +12,7 @@ import AnimatedNumber from '../ui/AnimatedNumber'
 import { T } from '../ui/theme'
 import { formatDate } from '../utils/dates'
 import { getPhase } from '../utils/onboardingPhase'
+import { ROLE } from '../config'
 
 const BASE_STYLES = {
   title: { fontSize: '20px', fontWeight: 600, letterSpacing: '-0.5px' },
@@ -44,6 +45,8 @@ export default function Dashboard({ session, userProfile, onStartOnboarding, onV
   const { onboardings, completedCount, loading, fetchError, docStats, offToday, refetch: fetchOnboardings } = useDashboard(refreshKey)
   const { toast, hideToast } = useToast()
   const { isMobile } = useWindowSize()
+  // Managers get a read-only dashboard; starting onboardings is admin-only.
+  const canManage = userProfile?.role === ROLE.ADMIN || userProfile?.role === ROLE.SUPER_ADMIN
 
   const completingThisWeek = onboardings.filter(o => {
     const { total, pct } = calcProgress(o.task_completions)
@@ -70,10 +73,12 @@ export default function Dashboard({ session, userProfile, onStartOnboarding, onV
           <div style={styles.title}>Dashboard</div>
           {!isMobile && <div style={styles.sub}>Overview of active employee onboardings.</div>}
         </div>
-        <Button size="sm" onClick={() => onNavigate('active')}>
-          <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M7 2v10M2 7h10"/></svg>
-          {isMobile ? 'New' : 'New onboarding'}
-        </Button>
+        {canManage && (
+          <Button size="sm" onClick={() => onNavigate('active')}>
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M7 2v10M2 7h10"/></svg>
+            {isMobile ? 'New' : 'New onboarding'}
+          </Button>
+        )}
       </div>
 
       <div style={styles.statsRow}>
@@ -144,7 +149,7 @@ export default function Dashboard({ session, userProfile, onStartOnboarding, onV
             )}
             title="No active onboardings"
             message="Start a new onboarding to get someone up to speed."
-            action={<Button onClick={() => onNavigate('active')}>New onboarding</Button>}
+            action={canManage ? <Button onClick={() => onNavigate('active')}>New onboarding</Button> : null}
           />
         ) : isMobile ? (
           onboardings.map((o, i) => {
@@ -217,7 +222,7 @@ export default function Dashboard({ session, userProfile, onStartOnboarding, onV
         )}
       </div>
 
-      {toast && <Toast message={toast.message} type={toast.type} onClose={hideToast} />}
+      {toast && <Toast key={toast.id} message={toast.message} type={toast.type} onClose={hideToast} />}
     </Layout>
   )
 }

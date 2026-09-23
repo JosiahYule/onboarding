@@ -1,15 +1,12 @@
 import { useTheme } from '../hooks/useTheme'
 import { T } from './theme'
 
-// Sun/moon toggle. Reads the resolved theme (accounting for 'system') so the
-// icon always reflects what's on screen.
+// Sun/moon toggle. Derives the icon from the theme held in state (resolving
+// 'system' via the OS preference). Reading <html data-theme> during render
+// lagged one click behind, because the attribute is only updated in an effect
+// after this render.
 export default function ThemeToggle({ compact = false }) {
-  const { toggle } = useTheme()
-  const isDark = typeof document !== 'undefined' && (
-    document.documentElement.getAttribute('data-theme') === 'dark' ||
-    (!document.documentElement.getAttribute('data-theme') &&
-      window.matchMedia?.('(prefers-color-scheme: dark)').matches)
-  )
+  const { isDark, toggle } = useTheme()
 
   return (
     <button

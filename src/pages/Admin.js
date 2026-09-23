@@ -10,6 +10,7 @@ import { useWindowSize } from '../hooks/useWindowSize'
 import { PHASES, BUCKET_SECTIONS, ONBOARDING_STATUS } from '../config'
 import { T } from '../ui/theme'
 import { formatDate } from '../utils/dates'
+import { safeFileName } from '../utils/files'
 
 const OWNERS = ['HR', 'Manager', 'IT']
 
@@ -197,10 +198,26 @@ async function addRole() {
       confirmLabel: 'Delete role',
       confirmDanger: true,
       onConfirm: async () => {
-        await supabase.from('onboarding_templates').delete().eq('role_id', id)
-        await supabase.from('roles').delete().eq('id', id)
+        // Deleting the templates first and the role second used to leave a
+        // role with no template behind whenever the second step failed (most
+        // often because employees still hold the role). Check that up front,
+        // and stop at the first error.
+        const { count, error: countError } = await supabase
+          .from('employees').select('id', { count: 'exact', head: true }).eq('role_id', id)
+        if (countError) { showToast(handleSupabaseError(countError, 'Failed to delete role.'), 'error'); setModal(null); return }
+        if (count > 0) {
+          showToast(`${count} employee${count === 1 ? ' is' : 's are'} assigned "${name}". Move them to another role first.`, 'error')
+          setModal(null)
+          return
+        }
+        const { error: tplError } = await supabase.from('onboarding_templates').delete().eq('role_id', id)
+        if (tplError) { showToast(handleSupabaseError(tplError, 'Failed to delete the role\'s tasks.'), 'error'); setModal(null); return }
+        const { error: roleError } = await supabase.from('roles').delete().eq('id', id)
+        if (roleError) { showToast(handleSupabaseError(roleError, 'Failed to delete role.'), 'error'); setModal(null); fetchTemplateCounts(); return }
+        logAudit('role_deleted', 'role', id, { role_name: name })
         if (selectedRole?.id === id) setSelectedRole(null)
         setModal(null)
+        showToast('Role deleted')
         fetchRoles()
       }
     })
@@ -212,10 +229,11 @@ async function addRole() {
     const siblings = templates.filter(t => t.phase === phase && !t.parent_id)
     const sortOrder = siblings.length ? Math.max(...siblings.map(s => s.sort_order ?? 0)) + 1 : 0
 
-    const { data: newTask } = await supabase
+    const { data: newTask, error: insertError } = await supabase
       .from('onboarding_templates')
       .insert({ role_id: selectedRole.id, task_name: newTaskName.trim(), phase, owner: newTaskOwner, sort_order: sortOrder })
       .select().single()
+    if (insertError) { showToast(handleSupabaseError(insertError, 'Failed to add task.'), 'error'); return }
 
     const addedName = newTaskName.trim()
     setNewTaskName('')
@@ -245,10 +263,12 @@ async function addRole() {
         confirmLabel: 'Yes, add to all',
         confirmDanger: false,
         onConfirm: async () => {
-          await supabase.from('task_completions').insert(
+          const { error } = await supabase.from('task_completions').insert(
             activeInstances.map(inst => ({ instance_id: inst.id, template_task_id: newTask.id, completed: false, day: newTask.phase, sort_order: 0 }))
           )
           setModal(null)
+          if (error) showToast(handleSupabaseError(error, 'Failed to add the task to active onboardings.'), 'error')
+          else showToast(`Added to ${activeInstances.length} active onboarding${activeInstances.length > 1 ? 's' : ''}`)
         }
       })
     }
@@ -435,9 +455,12 @@ async function addRole() {
       confirmLabel: 'Remove task',
       confirmDanger: true,
       onConfirm: async () => {
-        await supabase.from('onboarding_templates').delete().eq('id', id)
+        const { error } = await supabase.from('onboarding_templates').delete().eq('id', id)
         setModal(null)
+        if (error) { showToast(handleSupabaseError(error, 'Failed to remove task.'), 'error'); return }
+        showToast('Task removed')
         fetchTemplates(selectedRole.id)
+        fetchTemplateCounts()
       }
     })
   }
@@ -481,14 +504,26 @@ async function addSubtask(parentId) {
   }
 }
 
-async function deleteDoc(id, isResource) {
-  const { error } = await supabase.from('documents').delete().eq('id', id)
-  if (error) {
-    showToast(handleSupabaseError(error, `Failed to remove ${isResource ? 'resource' : 'document'}.`), 'error')
-  } else {
-    showToast(isResource ? 'Resource removed' : 'Document removed')
-    if (isResource) fetchCompanyResources(); else fetchDocuments()
-  }
+function deleteDoc(doc, isResource) {
+  setModal({
+    title: isResource ? 'Remove resource' : 'Remove document',
+    message: isResource
+      ? `Remove "${doc.name}" from company resources? Employees will no longer see it.`
+      : `Remove "${doc.name}"? It will disappear from every onboarding plan and employee portal it appears in.`,
+    confirmLabel: 'Remove',
+    confirmDanger: true,
+    onConfirm: async () => {
+      const { error } = await supabase.from('documents').delete().eq('id', doc.id)
+      setModal(null)
+      if (error) {
+        showToast(handleSupabaseError(error, `Failed to remove ${isResource ? 'resource' : 'document'}.`), 'error')
+        return
+      }
+      logAudit(isResource ? 'resource_removed' : 'document_removed', 'document', doc.id, { document_name: doc.name })
+      showToast(isResource ? 'Resource removed' : 'Document removed')
+      if (isResource) fetchCompanyResources(); else fetchDocuments()
+    }
+  })
 }
 
 async function renameResource(id) {
@@ -508,7 +543,7 @@ async function handleCompanyResourceUpload(e) {
   if (!file) return
   setUploadingResource(true)
 
-  const filePath = `documents/${Date.now()}_${file.name}`
+  const filePath = `documents/${Date.now()}_${safeFileName(file.name)}`
   const { error: uploadError } = await supabase.storage.from('documents').upload(filePath, file)
 
   if (uploadError) {
@@ -542,7 +577,7 @@ async function handleAdminDocumentUpload(e) {
   if (!file) return
   setUploadingDoc(true)
 
-  const filePath = `documents/${Date.now()}_${file.name}`
+  const filePath = `documents/${Date.now()}_${safeFileName(file.name)}`
   const { error: uploadError } = await supabase.storage
     .from('documents')
     .upload(filePath, file)
@@ -634,7 +669,7 @@ function renderModal() {
           onCancel={() => setModal(null)}
         />
       )}
-      {toast && <Toast message={toast.message} type={toast.type} onClose={hideToast} />}
+      {toast && <Toast key={toast.id} message={toast.message} type={toast.type} onClose={hideToast} />}
     </>
   )
 }
@@ -705,7 +740,9 @@ function renderModal() {
                     confirmLabel: 'Reactivate',
                     confirmDanger: false,
                     onConfirm: async () => {
-                      await supabase.from('onboarding_instances').update({ status: ONBOARDING_STATUS.ACTIVE }).eq('id', h.id)
+                      const { error } = await supabase.from('onboarding_instances').update({ status: ONBOARDING_STATUS.ACTIVE }).eq('id', h.id)
+                      if (error) { showToast(handleSupabaseError(error, 'Failed to reactivate.'), 'error'); setModal(null); return }
+                      showToast('Onboarding reactivated')
                       await logAudit('onboarding_reactivated', 'onboarding_instance', h.id, { employee_name: h.employees.full_name })
                       setModal(null)
                       fetchHistory()
@@ -1113,7 +1150,7 @@ if (initialTab === 'documents') {
                       </div>
                       <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
                         <a href={doc.file_url} target="_blank" rel="noreferrer" style={{ fontSize: '12px', color: 'var(--brand)', textDecoration: 'none' }}>View</a>
-                        <button style={styles.btnGhost} onClick={() => deleteDoc(doc.id, false)}>Remove</button>
+                        <button style={styles.btnGhost} onClick={() => deleteDoc(doc, false)}>Remove</button>
                       </div>
                     </div>
                   ))}
@@ -1174,7 +1211,7 @@ if (initialTab === 'documents') {
                     <>
                       <a href={doc.file_url} target="_blank" rel="noreferrer" style={{ fontSize: '12px', color: 'var(--brand)', textDecoration: 'none' }}>View</a>
                       <button style={styles.btnGhost} onClick={() => { setRenamingDocId(doc.id); setRenameValue(doc.name) }}>Rename</button>
-                      <button style={styles.btnGhost} onClick={() => deleteDoc(doc.id, true)}>Remove</button>
+                      <button style={styles.btnGhost} onClick={() => deleteDoc(doc, true)}>Remove</button>
                     </>
                   )}
                 </div>

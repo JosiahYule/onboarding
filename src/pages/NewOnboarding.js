@@ -5,7 +5,7 @@ import { handleSupabaseError } from '../utils/handleError'
 import { logAudit } from '../utils/auditLog'
 import { getHrEmail } from '../utils/getHrEmail'
 import { escapeHtml } from '../utils/escapeHtml'
-import { ONBOARDING_STATUS } from '../config'
+import { ONBOARDING_STATUS, brandInfo } from '../config'
 import { T } from '../ui/theme'
 import { formatDate } from '../utils/dates'
 
@@ -77,7 +77,7 @@ if (rpcError) {
   return
 }
 
-  await sendOnboardingStartedEmails(fullName, email, roleName, hireDate)
+  await sendOnboardingStartedEmails(fullName, email, roleName, hireDate, brand)
   await logAudit('onboarding_created', 'onboarding_instance', data.instance_id, {
     employee_name: fullName.trim(),
     role: roleName
@@ -87,7 +87,9 @@ if (rpcError) {
   onComplete(data.instance_id)
 }
 
-async function sendOnboardingStartedEmails(name, employeeEmail, role, startDate) {
+async function sendOnboardingStartedEmails(name, employeeEmail, role, startDate, brandCode) {
+  // Each agency's hires should be welcomed by that agency, not always by ISL.
+  const agency = brandInfo(brandCode)
   const startFormatted = formatDate(startDate)
   const firstName = escapeHtml(name.split(' ')[0])
   const safeName = escapeHtml(name)
@@ -100,7 +102,7 @@ async function sendOnboardingStartedEmails(name, employeeEmail, role, startDate)
       await supabase.functions.invoke('send-email', {
         body: {
           to: employeeEmail,
-          subject: `Welcome to Integrated Staffing, ${name.split(' ')[0]}`,
+          subject: `Welcome to ${agency.name}, ${name.split(' ')[0]}`,
           html: `
             <div style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px 20px; color: #1a1a1a;">
               <h1 style="font-size: 22px; font-weight: 600; letter-spacing: -0.4px; margin-bottom: 16px;">Welcome aboard, ${firstName}</h1>
@@ -108,7 +110,7 @@ async function sendOnboardingStartedEmails(name, employeeEmail, role, startDate)
               <p style="font-size: 15px; line-height: 1.6; color: #444;">Our HR team has prepared your onboarding plan and will be in touch shortly with next steps, required paperwork, and training schedule.</p>
               <p style="font-size: 15px; line-height: 1.6; color: #444;">If you have any questions before your start date, please reach out.</p>
               <p style="font-size: 15px; line-height: 1.6; color: #444; margin-top: 32px;">Welcome to the team.</p>
-              <p style="font-size: 13px; color: #888; margin-top: 40px; border-top: 1px solid #eee; padding-top: 20px;">Integrated Staffing Limited</p>
+              <p style="font-size: 13px; color: #888; margin-top: 40px; border-top: 1px solid #eee; padding-top: 20px;">${escapeHtml(agency.signOff)}</p>
             </div>
           `
         }

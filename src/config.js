@@ -5,6 +5,22 @@ export const BRAND = {
   company: 'Integrated Staffing Limited'
 }
 
+// The three sister agencies. `code` is what's stored in roles.brand and
+// employees.brand; `name` is what people should see; `signOff` closes emails.
+export const BRANDS = [
+  { code: 'ISL', name: 'Integrated Staffing', signOff: 'Integrated Staffing Limited' },
+  { code: 'AS', name: 'Accountant Staffing', signOff: 'Accountant Staffing' },
+  { code: 'ADS', name: 'Administrative Staffing', signOff: 'Administrative Staffing' },
+]
+export const BRAND_CODES = BRANDS.map(b => b.code)
+
+export function brandInfo(code) {
+  return BRANDS.find(b => b.code === code) || BRANDS[0]
+}
+export function brandName(code) {
+  return code ? (BRANDS.find(b => b.code === code)?.name || code) : ''
+}
+
 // The onboarding schedule. The first two weeks are broken into individual
 // business days (Day 1–Day 10); after that come weekly buckets and the
 // longer-range milestones. This ordered list is the source of truth for

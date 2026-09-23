@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { isSalesRep, getClientPortalUrl, CLIENT_PORTAL_URL } from './clientPortal'
+import { isSalesRep, getClientPortalUrl, openClientPortal, CLIENT_PORTAL_URL } from './clientPortal'
 
 vi.mock('../supabaseClient', () => ({
   supabase: {
@@ -44,5 +44,24 @@ describe('getClientPortalUrl', () => {
     // REACT_APP_CLIENT_PORTAL_STAFF_API is unset in the test environment.
     await expect(getClientPortalUrl()).resolves.toBe(CLIENT_PORTAL_URL)
     expect(global.fetch).not.toHaveBeenCalled()
+  })
+})
+
+describe('openClientPortal', () => {
+  const originalOpen = window.open
+
+  afterEach(() => {
+    window.open = originalOpen
+  })
+
+  it('navigates the tab it opened, rather than the app tab', async () => {
+    const tab = { opener: 'app', location: { href: '' }, close: vi.fn() }
+    window.open = vi.fn(() => tab)
+    await openClientPortal()
+    // No 'noopener' feature: that makes window.open return null.
+    expect(window.open).toHaveBeenCalledWith('', '_blank')
+    expect(tab.opener).toBeNull()
+    expect(tab.location.href).toBe(CLIENT_PORTAL_URL)
+    expect(tab.close).not.toHaveBeenCalled()
   })
 })

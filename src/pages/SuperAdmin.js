@@ -5,6 +5,7 @@ import Toast from '../components/Toast'
 import useToast from '../hooks/useToast'
 import { handleSupabaseError } from '../utils/handleError'
 import { logAudit } from '../utils/auditLog'
+import { clearSettingsCache } from '../utils/getHrEmail'
 import { useWindowSize } from '../hooks/useWindowSize'
 import { ROLE } from '../config'
 import { T } from '../ui/theme'
@@ -22,6 +23,16 @@ const ACTION_LABELS = {
   document_hidden: 'Document hidden',
   document_restored: 'Document restored',
   system_setting_updated: 'System setting updated',
+  task_added: 'Task added to a plan',
+  task_removed: 'Task removed from a plan',
+  role_deleted: 'Role deleted',
+  document_removed: 'Document removed',
+  resource_removed: 'Company resource removed',
+  time_off_requested: 'Time off requested',
+  time_off_approved: 'Time off approved',
+  time_off_denied: 'Time off denied',
+  time_off_cancelled: 'Time off cancelled',
+  client_portal_opened: 'Client portal opened',
 }
 
 const CHANGEABLE_ROLES = [ROLE.ADMIN, ROLE.MANAGER, ROLE.EMPLOYEE]
@@ -405,7 +416,7 @@ function UsersTab({ isMobile }) {
         </table>
       )}
       {users.length === 0 && <div style={s.empty}>No users found.</div>}
-      {toast && <Toast message={toast.message} type={toast.type} onClose={hideToast} />}
+      {toast && <Toast key={toast.id} message={toast.message} type={toast.type} onClose={hideToast} />}
     </>
   )
 }
@@ -554,6 +565,9 @@ function SystemSettingsTab({ isMobile }) {
       showToast(handleSupabaseError(error, 'Failed to save setting.'), 'error')
     } else {
       await logAudit('system_setting_updated', 'system_settings', key, { value: values[key] })
+      // Notification senders cache these; drop the cache so the new address
+      // is used right away rather than after the next page load.
+      clearSettingsCache()
       showToast('Setting saved')
     }
     setSaving(prev => ({ ...prev, [key]: false }))
@@ -586,7 +600,7 @@ function SystemSettingsTab({ isMobile }) {
         </div>
       ))}
       {settings.length === 0 && <div style={s.empty}>No settings configured.</div>}
-      {toast && <Toast message={toast.message} type={toast.type} onClose={hideToast} />}
+      {toast && <Toast key={toast.id} message={toast.message} type={toast.type} onClose={hideToast} />}
     </>
   )
 }

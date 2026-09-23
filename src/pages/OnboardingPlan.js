@@ -382,8 +382,8 @@ export default function OnboardingPlan({ session, userProfile, instanceId, onBac
         </button>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div style={STYLES.title}>{instance.employees.full_name}</div>
-          <button onClick={() => setEditingEmployee(true)} style={{ fontSize: '12px', color: 'var(--muted)', background: 'none', border: '1px solid var(--border)', borderRadius: '6px', padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit' }}>Edit</button>
-          <button onClick={handleDeleteEmployee} style={{ fontSize: '12px', color: '#c04040', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '4px 2px' }}>Delete</button>
+          {canEdit && <button onClick={() => setEditingEmployee(true)} style={{ fontSize: '12px', color: 'var(--muted)', background: 'none', border: '1px solid var(--border)', borderRadius: '6px', padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit' }}>Edit</button>}
+          {canEdit && <button onClick={handleDeleteEmployee} style={{ fontSize: '12px', color: '#c04040', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '4px 2px' }}>Delete</button>}
         </div>
         <div style={STYLES.sub}>
           {instance.employees.roles?.name} · Started {formatDate(instance.employees.hire_date)}
@@ -400,10 +400,10 @@ export default function OnboardingPlan({ session, userProfile, instanceId, onBac
         <div style={{ marginBottom: '36px' }}>
           <div style={STYLES.sectionLabel}>
             <span>Documents</span>
-            <label style={STYLES.uploadLink}>
+            {canEdit && <label style={STYLES.uploadLink}>
               {uploading ? 'Uploading...' : '+ Upload document'}
               <input type="file" style={{ display: 'none' }} onChange={handleUploadDocument} accept=".pdf,.doc,.docx" />
-            </label>
+            </label>}
           </div>
 
           {visibleDocs.length === 0 && hiddenDocs.length === 0 && (
@@ -416,7 +416,7 @@ export default function OnboardingPlan({ session, userProfile, instanceId, onBac
             const completedFileUrl = dc?.resolvedUrl || dc?.completed_file_url || null
             return (
               <div key={doc.id} style={{ borderBottom: '1px solid var(--border-subtle)', paddingBottom: '12px', marginBottom: '4px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '12px 0 4px' }} onClick={(e) => toggleDocument(doc.id, e)}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '12px 0 4px' }} onClick={(e) => canEdit && toggleDocument(doc.id, e)}>
                   <div style={STYLES.checkbox(signed)}>
                     {signed && checkIcon()}
                   </div>
@@ -426,11 +426,11 @@ export default function OnboardingPlan({ session, userProfile, instanceId, onBac
                     style={{ fontSize: '12px', color: 'var(--brand)', textDecoration: 'none', flexShrink: 0 }}>
                     View
                   </a>
-                  <button
+                  {canEdit && <button
                     onClick={(e) => { e.stopPropagation(); hideDocument(doc.id) }}
                     style={{ fontSize: '11px', color: 'var(--subtle)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
                     Hide
-                  </button>
+                  </button>}
                 </div>
                 {completedFileUrl && (
                   <div style={{ paddingLeft: '32px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -484,7 +484,7 @@ export default function OnboardingPlan({ session, userProfile, instanceId, onBac
         })}
       </div>
 
-      <div style={STYLES.footer}>
+      {canEdit && <div style={STYLES.footer}>
         <button style={STYLES.btnPrimary} onClick={handleMarkComplete}>Mark as complete</button>
         <button style={STYLES.btnSecondary} onClick={handleArchive}>Archive</button>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -497,7 +497,7 @@ export default function OnboardingPlan({ session, userProfile, instanceId, onBac
             </button>
           )}
         </div>
-      </div>
+      </div>}
 
       {modal && (
         <ConfirmModal
@@ -523,7 +523,7 @@ export default function OnboardingPlan({ session, userProfile, instanceId, onBac
         />
       )}
 
-      {toast && <Toast message={toast.message} type={toast.type} onClose={hideToast} />}
+      {toast && <Toast key={toast.id} message={toast.message} type={toast.type} onClose={hideToast} />}
     </Layout>
   )
 }

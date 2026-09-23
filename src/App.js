@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase, getUserProfile } from './supabaseClient'
 import Dashboard from './pages/Dashboard'
 import NewOnboarding from './pages/NewOnboarding'
@@ -12,6 +12,10 @@ import { pageToPath, pathToPage, planPath, parseInstanceId, ROLE } from './confi
 import Button from './ui/Button'
 import { T } from './ui/theme'
 
+
+// Admin-panel pages. Managers get a read-only dashboard and plans (see README),
+// so these are limited to admins and super admins.
+const ADMIN_PAGES = ['new-onboarding-select', 'templates', 'documents', 'company-resources', 'roles', 'history']
 
 function App() {
   const [session, setSession] = useState(null)
@@ -33,6 +37,28 @@ function App() {
   const [forgotPassword, setForgotPassword] = useState(false)
   const [resetSent, setResetSent] = useState(false)
   const [employeeView, setEmployeeView] = useState(() => localStorage.getItem('il-view-mode') === 'employee')
+  // null | 'missing' (signed in, no profile row) | 'failed' (couldn't load)
+  const [profileError, setProfileError] = useState(null)
+  const profileUserId = useRef(null)
+
+  const role = userProfile?.role
+  const canManage = role === ROLE.ADMIN || role === ROLE.SUPER_ADMIN
+  // Pages this user can't open, or that depend on state a refresh loses, fall
+  // back somewhere sensible. Done in an effect (not mid-render) so the URL is
+  // corrected too and React never sees a state update during render.
+  const redirectTo =
+    !userProfile || page === 'set-password' ? null
+    : page === 'time-off' && !canManage ? 'dashboard'
+    : page.startsWith('super-admin') && role !== ROLE.SUPER_ADMIN ? 'dashboard'
+    : ADMIN_PAGES.includes(page) && !canManage ? 'dashboard'
+    : page === 'new-onboarding' && !selectedRole ? (canManage ? 'new-onboarding-select' : 'dashboard')
+    : page === 'plan' && !activeInstanceId ? 'dashboard'
+    : null
+
+  useEffect(() => {
+    if (redirectTo) navigate(redirectTo, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- navigate is stable in practice
+  }, [redirectTo])
 
   useEffect(() => {
     const onPopState = () => {
@@ -64,12 +90,15 @@ useEffect(() => {
   const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
     setSession(session)
     if (session) {
-      fetchProfile(session.user.id)
+      // A token refresh only swaps the access token; the profile is unchanged.
+      if (_event !== 'TOKEN_REFRESHED') fetchProfile(session.user.id)
       if (_event === 'SIGNED_IN' && (hash.includes('type=invite') || hash.includes('type=recovery'))) {
         navigate('set-password', { replace: true })
       }
     } else {
+      profileUserId.current = null
       setUserProfile(null)
+      setProfileError(null)
       setProfileLoading(false)
     }
   })
@@ -78,10 +107,23 @@ useEffect(() => {
 }, [])
 
   async function fetchProfile(userId) {
-    setProfileLoading(true)
-    const profile = await getUserProfile(userId)
-    setUserProfile(profile)
-    setProfileLoading(false)
+    // Supabase re-announces the same user on tab refocus. Only a new user gets
+    // the full-screen spinner: showing it again would unmount every page and
+    // throw away whatever the person was in the middle of.
+    const firstLoad = profileUserId.current !== userId
+    profileUserId.current = userId
+    if (firstLoad) setProfileLoading(true)
+    try {
+      const profile = await getUserProfile(userId)
+      setUserProfile(profile)
+      setProfileError(profile ? null : 'missing')
+    } catch (err) {
+      console.error('Failed to load profile:', err)
+      // A background refresh failing shouldn't lock out someone mid-session.
+      if (firstLoad) setProfileError('failed')
+    } finally {
+      setProfileLoading(false)
+    }
   }
 
   async function handleLogin() {
@@ -220,13 +262,26 @@ if (!session) {
     return <SetPassword onComplete={() => navigate('dashboard')} />
   }
 
-  if (userProfile?.deactivated) {
+  if (userProfile?.deactivated || profileError) {
+    const failed = profileError === 'failed'
+    const title = failed ? 'We couldn’t load your account'
+      : userProfile?.deactivated ? 'Account deactivated'
+      : 'Your account isn’t set up yet'
+    const message = failed ? 'Check your connection and try again.'
+      : userProfile?.deactivated ? 'Your account has been deactivated. Please contact HR if you believe this is an error.'
+      : 'You’re signed in, but no access has been assigned to this account. Please contact HR to finish setting it up.'
     return (
-      <div style={{ minHeight: '100vh', background: 'var(--surface-raised)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Inter, -apple-system, sans-serif', padding: '20px' }}>
-        <div style={{ textAlign: 'center', maxWidth: '360px' }}>
-          <div style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text)', marginBottom: '8px' }}>Account deactivated</div>
-          <div style={{ fontSize: '13px', color: '#8a8a86', marginBottom: '24px', lineHeight: 1.6 }}>Your account has been deactivated. Please contact HR if you believe this is an error.</div>
-          <button onClick={() => supabase.auth.signOut()} style={{ fontSize: '13px', color: '#0070CA', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>Sign out</button>
+      <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: T.font, padding: '20px' }}>
+        <div className="il-auth" role="alert" style={{ textAlign: 'center', maxWidth: '380px' }}>
+          <div style={{ fontSize: '16px', fontWeight: 600, color: T.text, marginBottom: '8px' }}>{title}</div>
+          <div style={{ fontSize: '13px', color: T.muted, marginBottom: '24px', lineHeight: 1.6 }}>{message}</div>
+          <div style={{ fontSize: '12px', color: T.subtle, marginBottom: '16px' }}>Signed in as {session.user.email}</div>
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+            {failed && (
+              <Button onClick={() => { profileUserId.current = null; fetchProfile(session.user.id) }}>Try again</Button>
+            )}
+            <Button variant="secondary" onClick={() => supabase.auth.signOut()}>Sign out</Button>
+          </div>
         </div>
       </div>
     )
@@ -249,8 +304,7 @@ if (!session) {
     )
   }
 
-  if (page === 'super-admin-users' || page === 'super-admin-audit' || page === 'super-admin-settings') {
-    if (userProfile?.role !== ROLE.SUPER_ADMIN) return null
+  if (page.startsWith('super-admin') && role === ROLE.SUPER_ADMIN) {
     return (
       <SuperAdmin
         session={session}
@@ -290,11 +344,7 @@ if (!session) {
     )
   }
 
-  if (page === 'time-off') {
-    if (userProfile?.role !== ROLE.ADMIN && userProfile?.role !== ROLE.SUPER_ADMIN) {
-      navigate('dashboard')
-      return null
-    }
+  if (page === 'time-off' && canManage) {
     return (
       <TimeOff
         session={session}
@@ -304,7 +354,7 @@ if (!session) {
     )
   }
 
-  if (page === 'new-onboarding-select' || page === 'templates' || page === 'documents' || page === 'company-resources' || page === 'roles' || page === 'history') {
+  if (ADMIN_PAGES.includes(page) && canManage) {
     return (
       <Admin
         session={session}

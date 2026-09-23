@@ -19,11 +19,12 @@ import { attachResolvedUrls } from '../utils/documentUrls'
 import EmptyState, { EmptyIcons } from '../ui/EmptyState'
 import { T } from '../ui/theme'
 import { formatDate } from '../utils/dates'
+import { safeFileName } from '../utils/files'
 import ThemeToggle from '../ui/ThemeToggle'
 import ProgressRing from '../ui/ProgressRing'
 import AnimatedNumber from '../ui/AnimatedNumber'
 import { avatarStyle } from '../utils/avatarColor'
-import { isSalesRep, getClientPortalUrl } from '../utils/clientPortal'
+import { isSalesRep, openClientPortal } from '../utils/clientPortal'
 
 const BASE_STYLES = {
   app: { minHeight: '100vh', background: 'transparent', fontFamily: 'Inter, -apple-system, sans-serif', color: T.text },
@@ -137,7 +138,7 @@ export default function EmployeePortal({ session, userProfile, onSwitchToAdmin }
       // Always fetch the employee record so we have name/role in all cases
       const { data: empData } = await supabase
         .from('employees')
-        .select('id, full_name, hire_date, brand, role_id, roles(name)')
+        .select('id, full_name, hire_date, brand, role_id, manager_id, roles(name)')
         .eq('id', userProfile.employee_id)
         .single()
       if (empData) setEmployee(empData)
@@ -533,7 +534,7 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
     setUploadingDocId(docId)
 
     const employeeId = userProfile.employee_id
-    const filePath = `${employeeId}/${docId}_${Date.now()}_${file.name}`
+    const filePath = `${employeeId}/${docId}_${Date.now()}_${safeFileName(file.name)}`
 
     const { error: uploadError } = await supabase.storage
       .from('employee-documents')
@@ -571,6 +572,7 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
 
     showToast('Document uploaded successfully')
     setUploadingDocId(null)
+    e.target.value = ''
   }
 
   const checkIcon = (size = 9) => (
@@ -1257,15 +1259,10 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
                 onClick={async () => {
                   if (portalOpening) return
                   setPortalOpening(true)
-                  // Opened up front so the handoff isn't treated as a popup.
-                  const tab = window.open('', '_blank', 'noopener')
                   try {
-                    const url = await getClientPortalUrl()
-                    if (tab) tab.location = url
-                    else window.location.assign(url)
+                    await openClientPortal()
                     logAudit('client_portal_opened', 'client_portal', null, null)
                   } catch (err) {
-                    if (tab) tab.close()
                     showToast(err.message || 'Could not open the client portal.', 'error')
                   } finally {
                     setPortalOpening(false)
@@ -1309,7 +1306,7 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
         />
       )}
 
-      {toast && <Toast message={toast.message} type={toast.type} onClose={hideToast} />}
+      {toast && <Toast key={toast.id} message={toast.message} type={toast.type} onClose={hideToast} />}
     </div>
   )
 }
