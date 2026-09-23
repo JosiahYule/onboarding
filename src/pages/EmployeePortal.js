@@ -18,6 +18,7 @@ import { computeProgress, isParentComplete } from '../utils/taskProgress'
 import { attachResolvedUrls } from '../utils/documentUrls'
 import EmptyState, { EmptyIcons } from '../ui/EmptyState'
 import { T } from '../ui/theme'
+import { formatDate } from '../utils/dates'
 import ThemeToggle from '../ui/ThemeToggle'
 import ProgressRing from '../ui/ProgressRing'
 import AnimatedNumber from '../ui/AnimatedNumber'
@@ -654,7 +655,7 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
             <div style={styles.sub}>
               {displayRole && `${displayRole} · `}
               {instance && displayHireDate
-                ? `Started ${new Date(displayHireDate).toLocaleDateString('en-CA', { month: 'long', day: 'numeric', year: 'numeric' })}`
+                ? `Started ${formatDate(displayHireDate)}`
                 : (employee?.brand || userProfile?.brand || 'Integrated Staffing')}
             </div>
           </div>

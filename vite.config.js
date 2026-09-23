@@ -18,5 +18,8 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: './src/setupTests.js',
     css: false,
+    // Run in the business's own time zone. In UTC, date bugs that only show up
+    // west of Greenwich (a start date displaying a day early) stay hidden.
+    env: { TZ: 'America/Halifax' },
   },
 })

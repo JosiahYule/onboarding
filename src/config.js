@@ -1,3 +1,5 @@
+import { toLocalISODate } from './utils/dates'
+
 export const BRAND = {
   name: 'Integrated Launch',
   company: 'Integrated Staffing Limited'
@@ -26,9 +28,10 @@ export const BUCKET_SECTIONS = [
 export const PHASES = SCHEDULE_BUCKETS
 
 // Computed on call, not at module load, so a long-lived tab doesn't keep using
-// yesterday's date or last year after midnight / New Year.
+// yesterday's date or last year after midnight / New Year. Local, not UTC:
+// toISOString() would roll over to tomorrow at 8-9pm Atlantic time.
 export function getToday() {
-  return new Date().toISOString().slice(0, 10)
+  return toLocalISODate()
 }
 export function getCurrentYear() {
   return new Date().getFullYear()

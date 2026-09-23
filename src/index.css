@@ -44,6 +44,14 @@
   --danger: #c04040;
   --danger-bg: #fdf0f0;
   --danger-border: #f5d6d6;
+  --success-bg: #effaf3;
+  --success-border: #c3e8d1;
+  --warning-bg: #fff8eb;
+  --warning-border: #f5e1b0;
+  /* Recessed areas: weekends on the calendar, selected rows, inset panels */
+  --surface-sunken: #fafaf9;
+  /* Text/icons sitting on a solid brand or danger fill */
+  --on-accent: #ffffff;
   --btn-primary-bg: linear-gradient(180deg, #222 0%, #111 100%);
   --btn-primary-fg: #ffffff;
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
@@ -90,6 +98,12 @@
   --danger: #e5695f;
   --danger-bg: #2a1b1b;
   --danger-border: #4a2c2c;
+  --success-bg: #16271e;
+  --success-border: #25432f;
+  --warning-bg: #2a2214;
+  --warning-border: #4a3a1c;
+  --surface-sunken: #1a1a1d;
+  --on-accent: #ffffff;
   --btn-primary-bg: linear-gradient(180deg, #3a3a42 0%, #2b2b31 100%);
   --btn-primary-fg: #f2f1ee;
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3);
@@ -129,6 +143,12 @@
     --danger: #e5695f;
     --danger-bg: #2a1b1b;
     --danger-border: #4a2c2c;
+    --success-bg: #16271e;
+    --success-border: #25432f;
+    --warning-bg: #2a2214;
+    --warning-border: #4a3a1c;
+    --surface-sunken: #1a1a1d;
+    --on-accent: #ffffff;
     --btn-primary-bg: linear-gradient(180deg, #3a3a42 0%, #2b2b31 100%);
     --btn-primary-fg: #f2f1ee;
     --shadow-sm: 0 1px 3px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3);

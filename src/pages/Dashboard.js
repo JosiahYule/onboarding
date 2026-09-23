@@ -10,6 +10,8 @@ import Button from '../ui/Button'
 import EmptyState from '../ui/EmptyState'
 import AnimatedNumber from '../ui/AnimatedNumber'
 import { T } from '../ui/theme'
+import { formatDate } from '../utils/dates'
+import { getPhase } from '../utils/onboardingPhase'
 
 const BASE_STYLES = {
   title: { fontSize: '20px', fontWeight: 600, letterSpacing: '-0.5px' },
@@ -32,13 +34,10 @@ const BASE_STYLES = {
   phasePill: { fontSize: '11px', padding: '2px 8px', borderRadius: '5px', background: T.brandLight, color: T.brand, fontWeight: 600 },
 }
 
-function getPhase(hireDate) {
-  const days = Math.floor((new Date() - new Date(hireDate)) / (1000 * 60 * 60 * 24))
-  if (days <= 7) return 'Week 1'
-  if (days <= 14) return 'Week 2'
-  if (days <= 30) return '30 Day'
-  if (days <= 60) return '60 Day'
-  return '90 Day'
+function phasePillStyle(tone) {
+  if (tone === 'warning') return { ...BASE_STYLES.phasePill, background: T.warningBg, color: T.warning }
+  if (tone === 'neutral') return { ...BASE_STYLES.phasePill, background: 'var(--hover-bg)', color: T.muted }
+  return BASE_STYLES.phasePill
 }
 
 export default function Dashboard({ session, userProfile, onStartOnboarding, onViewOnboarding, onNavigate, refreshKey }) {
@@ -121,7 +120,7 @@ export default function Dashboard({ session, userProfile, onStartOnboarding, onV
               <div style={{ ...styles.tableHeader, padding: '14px 0' }}>
                 <div></div><div>Employee</div><div>Role</div>
                 <div>Progress</div><div>Phase</div>
-                <div style={{ textAlign: 'right' }}>Started</div>
+                <div style={{ textAlign: 'right' }}>Start date</div>
               </div>
               <SkeletonRow /><SkeletonRow /><SkeletonRow /><SkeletonRow />
             </div>
@@ -160,7 +159,7 @@ export default function Dashboard({ session, userProfile, onStartOnboarding, onV
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
                     <span style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text)' }}>{name}</span>
-                    <span style={styles.phasePill}>{phase}</span>
+                    <span style={phasePillStyle(phase.tone)}>{phase.label}</span>
                   </div>
                   <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '8px' }}>{o.employees.roles?.name || 'Unknown role'}</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -179,7 +178,7 @@ export default function Dashboard({ session, userProfile, onStartOnboarding, onV
             <div style={styles.tableHeader}>
               <div></div><div>Employee</div><div>Role</div>
               <div>Progress</div><div>Phase</div>
-              <div style={{ textAlign: 'right' }}>Started</div>
+              <div style={{ textAlign: 'right' }}>Start date</div>
             </div>
             {onboardings.map((o, i) => {
               const { pct } = calcProgress(o.task_completions)
@@ -207,9 +206,9 @@ export default function Dashboard({ session, userProfile, onStartOnboarding, onV
                     <div style={styles.progressTrack}><div className="il-progress-fill" style={{ ...styles.progressFill, width: `${pct}%`, background: pct === 100 ? 'linear-gradient(90deg, #1a7a4a, #2ea864)' : 'linear-gradient(90deg, #0066cc, #3d9eff)' }}></div></div>
                     <div style={{ ...styles.progressText, color: pct === 100 ? '#1a7a4a' : '#18181b' }}>{pct}%</div>
                   </div>
-                  <div><span style={styles.phasePill}>{phase}</span></div>
+                  <div><span style={phasePillStyle(phase.tone)}>{phase.label}</span></div>
                   <div style={{ ...styles.rowTextMuted, textAlign: 'right' }} className="il-tabular">
-                    {new Date(o.employees.hire_date).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })}
+                    {formatDate(o.employees.hire_date, { month: 'short', day: 'numeric' })}
                   </div>
                 </button>
               )

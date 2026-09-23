@@ -1,3 +1,5 @@
+import { formatDate } from './dates'
+
 export const TYPE_LABELS = {
   personal_vacation: 'Personal / Vacation',
   professional_development: 'Professional Development Training',
@@ -54,7 +56,7 @@ export function TypeIcon({ type, size = 13 }) {
 }
 
 export function fmtDate(iso) {
-  return new Date(iso + 'T12:00:00').toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })
+  return formatDate(iso, { month: 'short', day: 'numeric' })
 }
 
 export function fmtDateRange(start, end) {

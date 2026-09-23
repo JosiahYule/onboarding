@@ -20,6 +20,13 @@ export const T = {
   danger: 'var(--danger)',
   dangerBg: 'var(--danger-bg)',
   dangerBorder: 'var(--danger-border)',
+  successBg: 'var(--success-bg)',
+  successBorder: 'var(--success-border)',
+  warningBg: 'var(--warning-bg)',
+  warningBorder: 'var(--warning-border)',
+  surfaceSunken: 'var(--surface-sunken)',
+  hoverBg: 'var(--hover-bg)',
+  onAccent: 'var(--on-accent)',
 
   // Primary (neutral) button — theme-aware so it stays visible in dark mode
   btnPrimaryBg: 'var(--btn-primary-bg)',

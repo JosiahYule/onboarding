@@ -7,6 +7,7 @@ import { getHrEmail } from '../utils/getHrEmail'
 import { normalizeTask, sortTasks } from '../utils/schedule'
 import { attachResolvedUrls } from '../utils/documentUrls'
 import { escapeHtml } from '../utils/escapeHtml'
+import { formatDate } from '../utils/dates'
 
 export function useOnboardingPlan({ instanceId, onBack }) {
   const [instance, setInstance] = useState(null)
@@ -398,8 +399,8 @@ export function useOnboardingPlan({ instanceId, onBack }) {
                 <p style="font-size: 14px; color: #444; line-height: 1.6;"><strong>${escapeHtml(instance.employees.full_name)}</strong> has completed their onboarding plan.</p>
                 <table style="font-size: 14px; color: #444; margin-top: 16px;">
                   <tr><td style="padding: 4px 16px 4px 0; color: #888;">Role</td><td>${escapeHtml(instance.employees.roles?.name || 'N/A')}</td></tr>
-                  <tr><td style="padding: 4px 16px 4px 0; color: #888;">Started</td><td>${new Date(instance.employees.hire_date).toLocaleDateString('en-CA', { month: 'long', day: 'numeric', year: 'numeric' })}</td></tr>
-                  <tr><td style="padding: 4px 16px 4px 0; color: #888;">Completed</td><td>${new Date().toLocaleDateString('en-CA', { month: 'long', day: 'numeric', year: 'numeric' })}</td></tr>
+                  <tr><td style="padding: 4px 16px 4px 0; color: #888;">Started</td><td>${formatDate(instance.employees.hire_date)}</td></tr>
+                  <tr><td style="padding: 4px 16px 4px 0; color: #888;">Completed</td><td>${formatDate(new Date())}</td></tr>
                   <tr><td style="padding: 4px 16px 4px 0; color: #888;">Tasks completed</td><td>${completedTasksCount()} of ${totalTasks()}</td></tr>
                 </table>
                 <p style="font-size: 13px; color: #888; margin-top: 32px;">Sent by Integrated Launch</p>

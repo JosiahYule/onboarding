@@ -7,6 +7,7 @@ import { getHrEmail } from '../utils/getHrEmail'
 import { escapeHtml } from '../utils/escapeHtml'
 import { ONBOARDING_STATUS } from '../config'
 import { T } from '../ui/theme'
+import { formatDate } from '../utils/dates'
 
 export default function NewOnboarding({ session, userProfile, roleId, roleName, onBack, onNavigate, onComplete }) {
   const [fullName, setFullName] = useState('')
@@ -87,7 +88,7 @@ if (rpcError) {
 }
 
 async function sendOnboardingStartedEmails(name, employeeEmail, role, startDate) {
-  const startFormatted = new Date(startDate).toLocaleDateString('en-CA', { month: 'long', day: 'numeric', year: 'numeric' })
+  const startFormatted = formatDate(startDate)
   const firstName = escapeHtml(name.split(' ')[0])
   const safeName = escapeHtml(name)
   const safeRole = escapeHtml(role)

@@ -8,6 +8,7 @@ import { useOnboardingPlan } from '../hooks/useOnboardingPlan'
 import { BUCKET_SECTIONS, SCHEDULE_BUCKETS } from '../config'
 import { groupParentsByBucket, bucketDateHint } from '../utils/schedule'
 import { T } from '../ui/theme'
+import { formatDate } from '../utils/dates'
 
 const OWNERS = ['HR', 'Manager', 'IT']
 
@@ -385,7 +386,7 @@ export default function OnboardingPlan({ session, userProfile, instanceId, onBac
           <button onClick={handleDeleteEmployee} style={{ fontSize: '12px', color: '#c04040', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '4px 2px' }}>Delete</button>
         </div>
         <div style={STYLES.sub}>
-          {instance.employees.roles?.name} · Started {new Date(instance.employees.hire_date).toLocaleDateString('en-CA', { month: 'long', day: 'numeric', year: 'numeric' })}
+          {instance.employees.roles?.name} · Started {formatDate(instance.employees.hire_date)}
         </div>
         <div style={STYLES.progressRow}>
           <span style={STYLES.progressText}>{completedTasksCount()} of {totalTasks()} tasks complete</span>
