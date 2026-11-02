@@ -488,12 +488,14 @@ input, select, textarea {
 }
 
 /* Card: ClientLaunch's paper. Nothing on the page floats, so nothing on the
-   page has a shadow; a card is a hairline, a 4px corner and space. */
+   page has a shadow; a card is a hairline, a 4px corner and space.
+   No overflow clipping: the dashboard table is wider than its card between
+   768px and ~800px, and clipping would hide its last column rather than let
+   it show. */
 .il-card {
   background: var(--surface);
   border: 1px solid var(--border-card);
   border-radius: var(--radius-lg);
-  overflow: clip;
 }
 
 /* Interactive card: the border darkens a step, it does not lift. */
