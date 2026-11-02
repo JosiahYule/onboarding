@@ -149,15 +149,15 @@ async function sendOnboardingStartedEmails(name, employeeEmail, role, startDate,
       <div style={{ padding: isMobile ? '20px 16px 40px' : '32px 40px 48px', maxWidth: '560px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', marginBottom: '24px', background: T.surfaceSunken, border: `1px solid ${T.borderSubtle}`, borderRadius: T.radiusMd }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '11px', fontWeight: 600, color: T.subtle, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Role</div>
-            <div style={{ fontSize: '14px', fontWeight: 500, color: T.text, marginTop: '2px' }}>{roleName}{agency && <span style={{ color: T.muted, fontWeight: 400 }}> · {agency}</span>}</div>
+            <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: T.subtle, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Role</div>
+            <div style={{ fontSize: 'var(--text-md)', fontWeight: 500, color: T.text, marginTop: '2px' }}>{roleName}{agency && <span style={{ color: T.muted, fontWeight: 400 }}> · {agency}</span>}</div>
           </div>
           <Button variant="link" size="sm" onClick={() => onNavigate('active')}>Change</Button>
         </div>
 
         <form onSubmit={handleCreate} noValidate>
           {error && (
-            <div role="alert" style={{ fontSize: '13px', color: T.danger, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: T.radiusMd, padding: '10px 12px', marginBottom: '18px', lineHeight: 1.5 }}>
+            <div role="alert" style={{ fontSize: 'var(--text-base)', color: T.danger, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: T.radiusMd, padding: '10px 12px', marginBottom: '18px', lineHeight: 1.5 }}>
               {error}
             </div>
           )}

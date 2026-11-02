@@ -5,6 +5,7 @@ import { ROLE } from '../config'
 import { isSalesRep, openClientPortal } from '../utils/clientPortal'
 import { displayNameFromEmail } from '../utils/formatUtils'
 import ThemeToggle from '../ui/ThemeToggle'
+import { BrandLockup, BrandMark } from '../ui/Brand'
 
 // Pages that count as a primary tab on mobile; anything else lights up "More".
 const PRIMARY_PAGES = ['dashboard', 'active', 'new-onboarding-select', 'time-off']
@@ -78,23 +79,19 @@ function Icon({ type, size = 14 }) {
   return null
 }
 
-function BrandMark({ size = 26 }) {
-  return (
-    <div aria-hidden="true" style={{ width: size, height: size, background: 'linear-gradient(135deg, #004db3 0%, #0080ff 100%)', borderRadius: Math.round(size * 0.27), display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: size >= 26 ? '11px' : '10px', fontWeight: 700, letterSpacing: '-0.2px', flexShrink: 0, boxShadow: '0 1px 2px rgba(0,77,179,0.3)' }}>
-      IL
-    </div>
-  )
-}
-
+// ClientLaunch's .avatar: a square, like everything else, in the brand tint.
 function UserAvatar({ initials, size }) {
   return (
-    <div aria-hidden="true" style={{ width: size, height: size, borderRadius: '50%', background: 'linear-gradient(135deg, #1a1a2e 0%, #374151 100%)', color: '#fff', fontSize: '11px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+    <div aria-hidden="true" style={{ width: size, height: size, borderRadius: 'var(--radius-sm)', background: 'var(--brand-tint)', color: 'var(--brand-strong)', fontFamily: 'var(--font-heading)', fontSize: 'var(--text-base)', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
       {initials}
     </div>
   )
 }
 
-const sectionLabel = { fontSize: '11px', color: 'var(--subtle)', fontWeight: 500, letterSpacing: '0.3px', textTransform: 'uppercase' }
+const ROLE_LABELS = { employee: 'Employee', manager: 'Manager', admin: 'Admin', super_admin: 'Super admin' }
+
+// ClientLaunch's .t-label.
+const sectionLabel = { fontSize: 'var(--text-xs)', color: 'var(--subtle)', fontWeight: 600, letterSpacing: '0.4px', textTransform: 'uppercase' }
 
 export default function Layout({ session, userProfile, currentPage, onNavigate, children }) {
   const { isMobile } = useWindowSize()
@@ -140,7 +137,7 @@ export default function Layout({ session, userProfile, currentPage, onNavigate, 
 
   const skipLink = <a href="#main" className="il-skip-link">Skip to content</a>
   const portalErrorNote = portalError && (
-    <div role="alert" style={{ fontSize: '11px', color: 'var(--danger)', padding: '2px 12px 4px', lineHeight: 1.4 }}>{portalError}</div>
+    <div role="alert" style={{ fontSize: 'var(--text-xs)', color: 'var(--danger)', padding: '2px 12px 4px', lineHeight: 1.4 }}>{portalError}</div>
   )
 
   // ── MOBILE LAYOUT ──
@@ -150,15 +147,15 @@ export default function Layout({ session, userProfile, currentPage, onNavigate, 
       justifyContent: 'center', gap: '3px', height: '56px',
       background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
       color: active ? 'var(--brand)' : 'var(--subtle)',
-      fontSize: '10px', fontWeight: active ? 600 : 500,
+      fontSize: 'var(--text-xs)', fontWeight: active ? 600 : 500,
       padding: '6px 4px 4px',
     })
 
     const drawerBtn = (active) => ({
       display: 'flex', alignItems: 'center', gap: '14px',
       padding: '13px 20px', width: '100%',
-      background: active ? 'var(--hover-bg)' : 'none',
-      border: 'none', fontSize: '15px',
+      background: active ? 'var(--brand-light)' : 'none',
+      border: 'none', borderLeft: `2px solid ${active ? 'var(--brand)' : 'transparent'}`, fontSize: 'var(--text-lg)',
       fontWeight: active ? 500 : 400, color: 'var(--text)',
       cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
     })
@@ -173,11 +170,11 @@ export default function Layout({ session, userProfile, currentPage, onNavigate, 
         {skipLink}
         <header className="il-header" data-topbar="true" style={{
           position: 'sticky', top: 0, zIndex: 40,
-          boxShadow: '0 1px 0 var(--border)',
+          borderBottom: '1px solid var(--border)',
           height: '54px', display: 'flex', alignItems: 'center', padding: '0 16px', gap: '10px',
         }}>
           <BrandMark size={24} />
-          <div style={{ fontSize: '14px', fontWeight: 600, letterSpacing: '-0.3px', color: 'var(--text)' }}>Integrated Launch</div>
+          <div style={{ fontFamily: 'var(--font-heading)', fontSize: 'var(--text-md)', fontWeight: 600, color: 'var(--text)' }}>Integrated Launch</div>
         </header>
 
         <main id="main" tabIndex={-1} style={{ paddingBottom: 'calc(64px + env(safe-area-inset-bottom, 0px))', outline: 'none' }}>
@@ -186,7 +183,7 @@ export default function Layout({ session, userProfile, currentPage, onNavigate, 
 
         <nav aria-label="Main" className="il-tabbar" style={{
           position: 'fixed', bottom: 0, left: 0, right: 0,
-          boxShadow: '0 -1px 0 var(--border)',
+          borderTop: '1px solid var(--border)',
           display: 'flex', zIndex: 40,
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
         }}>
@@ -226,7 +223,8 @@ export default function Layout({ session, userProfile, currentPage, onNavigate, 
               className="il-drawer"
               style={{
                 position: 'absolute', bottom: 0, left: 0, right: 0,
-                background: 'var(--surface)', borderRadius: '16px 16px 0 0',
+                background: 'var(--surface)', borderRadius: 'var(--radius-xl) var(--radius-xl) 0 0',
+                borderTop: '1px solid var(--border)', boxShadow: 'var(--shadow-lg)',
                 paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 8px)',
                 maxHeight: '80vh', overflowY: 'auto',
               }}
@@ -249,15 +247,15 @@ export default function Layout({ session, userProfile, currentPage, onNavigate, 
               </div>
               <div style={{ borderTop: '1px solid var(--border)', padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-                  <UserAvatar initials={initials} size="30px" />
+                  <UserAvatar initials={initials} size="32px" />
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text)', letterSpacing: '-0.1px' }}>{name}</div>
-                    <div style={{ fontSize: '11px', color: 'var(--subtle)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email}</div>
+                    <div style={{ fontSize: 'var(--text-base)', fontWeight: 500, color: 'var(--text)', letterSpacing: '-0.1px' }}>{name}</div>
+                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--subtle)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email}</div>
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                   <ThemeToggle compact />
-                  <button className="il-btn-ghost" onClick={() => supabase.auth.signOut()} style={{ background: 'none', border: '1px solid var(--border)', borderRadius: '7px', padding: '7px 14px', fontSize: '13px', color: 'var(--muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
+                  <button className="il-btn-ghost" onClick={() => supabase.auth.signOut()} style={{ height: '44px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '0 16px', fontSize: 'var(--text-md)', color: 'var(--text)', cursor: 'pointer', fontFamily: 'var(--font-heading)', fontWeight: 600 }}>
                     Sign out
                   </button>
                 </div>
@@ -270,47 +268,48 @@ export default function Layout({ session, userProfile, currentPage, onNavigate, 
   }
 
   // ── DESKTOP LAYOUT ──
+  // ClientLaunch's console rail: white, a hairline on its right edge, rows that
+  // run edge to edge so the active one can be a 2px brand rule on the rail's
+  // own left edge over the palest blue tint.
   const navItem = (active) => ({
-    display: 'flex', alignItems: 'center', gap: '10px',
-    padding: '7px 12px',
-    borderRadius: '7px', fontSize: '13px',
-    color: active ? 'var(--brand)' : 'var(--muted)',
+    display: 'flex', alignItems: 'center', gap: '11px',
+    height: '38px', padding: '0 20px 0 18px',
+    borderRadius: 0, fontSize: 'var(--text-md)',
+    color: active ? 'var(--text)' : 'var(--muted)',
     background: active ? 'var(--brand-light)' : 'transparent',
     fontWeight: active ? 500 : 400,
     cursor: 'pointer',
-    border: 'none',
+    border: 'none', borderLeft: `2px solid ${active ? 'var(--brand)' : 'transparent'}`,
     fontFamily: 'inherit', width: '100%', textAlign: 'left',
-    letterSpacing: '-0.1px',
   })
 
   return (
     <div style={{
-      minHeight: '100vh', background: 'transparent',
-      display: 'grid', gridTemplateColumns: '240px 1fr',
+      minHeight: '100vh', background: 'var(--surface)',
+      display: 'grid', gridTemplateColumns: '240px minmax(0, 1fr)',
       fontFamily: 'var(--font)', color: 'var(--text)',
     }}>
       {skipLink}
       <aside style={{
-        background: 'var(--glass)', backdropFilter: 'var(--glass-filter)', WebkitBackdropFilter: 'var(--glass-filter)',
-        borderRight: '1px solid var(--border)',
-        padding: '0 10px', display: 'flex', flexDirection: 'column',
+        background: 'var(--surface)',
+        borderRight: '1px solid var(--border-subtle)',
+        padding: '22px 0 16px', display: 'flex', flexDirection: 'column',
         position: 'sticky', top: 0, height: '100vh', overflowY: 'auto',
       }}>
-        <div style={{ padding: '22px 12px 20px', display: 'flex', alignItems: 'center', gap: '9px' }}>
-          <BrandMark />
-          <div style={{ fontSize: '14px', fontWeight: 600, letterSpacing: '-0.3px', color: 'var(--text)' }}>Integrated Launch</div>
+        <div style={{ padding: '0 20px 22px' }}>
+          <BrandLockup size={26} sub="Integrated Launch" />
         </div>
 
         <nav aria-label="Main">
           {sections.map(section => (
             <div key={section.id}>
-              {section.label && <div style={{ ...sectionLabel, padding: '14px 12px 4px' }}>{section.label}</div>}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginBottom: '4px' }}>
+              {section.label && <div style={{ ...sectionLabel, padding: '16px 20px 6px' }}>{section.label}</div>}
+              <div style={{ display: 'flex', flexDirection: 'column', marginBottom: '2px' }}>
                 {section.items.map(item => {
                   const active = isActive(item, currentPage)
                   return (
                     <button key={item.id} className={`il-nav-item${active ? ' il-nav-active' : ''}`} aria-current={active ? 'page' : undefined} style={navItem(active)} disabled={item.disabled} onClick={() => activate(item)}>
-                      <Icon type={item.icon} />
+                      <span style={{ display: 'inline-flex', color: active ? 'var(--brand)' : 'var(--subtle)' }}><Icon type={item.icon} /></span>
                       {item.label}
                     </button>
                   )
@@ -321,15 +320,20 @@ export default function Layout({ session, userProfile, currentPage, onNavigate, 
           ))}
         </nav>
 
-        <div style={{ marginTop: 'auto', borderTop: '1px solid var(--border)', padding: '14px 12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <UserAvatar initials={initials} size="28px" />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div title={email} style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text)', letterSpacing: '-0.1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</div>
-              <button className="il-link-subtle" onClick={() => supabase.auth.signOut()} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit', color: 'var(--subtle)', fontSize: '11px', display: 'block', textAlign: 'left', letterSpacing: 0 }}>
-                Sign out
-              </button>
+        {/* Identity on its own line, actions under a rule, as ClientLaunch's
+            rail foot does. */}
+        <div style={{ marginTop: 'auto', display: 'grid', gap: '12px', padding: '16px 20px 0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+            <UserAvatar initials={initials} size="32px" />
+            <div style={{ display: 'grid', minWidth: 0, lineHeight: 1.25 }}>
+              <div title={email} style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</div>
+              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ROLE_LABELS[userProfile?.role] || email}</div>
             </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '14px', paddingTop: '10px', borderTop: '1px solid var(--border-subtle)' }}>
+            <button className="il-link-subtle" onClick={() => supabase.auth.signOut()} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit', color: 'var(--subtle)', fontSize: 'var(--text-sm)', fontWeight: 500 }}>
+              Sign out
+            </button>
             <ThemeToggle />
           </div>
         </div>

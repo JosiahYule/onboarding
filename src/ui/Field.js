@@ -25,7 +25,7 @@ export default function Field({ label, hint, error, optional = false, required =
 
   return (
     <div style={{ marginBottom: '18px', minWidth: 0, ...style }}>
-      <label htmlFor={id} style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: T.muted, marginBottom: '6px' }}>
+      <label htmlFor={id} style={{ display: 'block', fontSize: 'var(--text-sm)', fontWeight: 500, color: T.muted, marginBottom: '6px' }}>
         {label}
         {optional && <span style={{ color: T.subtle, fontWeight: 400 }}> (optional)</span>}
         {required && <span aria-hidden="true" style={{ color: T.danger }}> *</span>}

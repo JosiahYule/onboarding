@@ -22,8 +22,8 @@ export default function EmptyState({ icon, title, message, action, compact = fal
           {icon}
         </div>
       )}
-      {title && <div style={{ fontSize: '14px', fontWeight: 600, color: T.text }}>{title}</div>}
-      {message && <div style={{ fontSize: '13px', color: T.muted, lineHeight: 1.6, maxWidth: '340px' }}>{message}</div>}
+      {title && <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: T.text }}>{title}</div>}
+      {message && <div style={{ fontSize: 'var(--text-base)', color: T.muted, lineHeight: 1.6, maxWidth: '340px' }}>{message}</div>}
       {action && <div style={{ marginTop: '12px' }}>{action}</div>}
     </div>
   )

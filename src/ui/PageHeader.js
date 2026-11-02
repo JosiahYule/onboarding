@@ -15,19 +15,20 @@ export default function PageHeader({ title, subtitle, actions, back, tabs, child
   return (
     // On phones a tall header (back link, actions, progress) would pin a
     // quarter of the screen, so only compact headers stay sticky there.
-    <header className={`il-header${isMobile && (children || back) ? ' il-header-static' : ''}`} style={{ boxShadow: '0 1px 0 var(--border)' }}>
+    <header className={`il-header${isMobile && (children || back) ? ' il-header-static' : ''}`} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
       <div style={{ padding: `${top}px ${px}px ${bottom}px` }}>
         {back && (
           <button type="button" className="il-link-subtle" onClick={back.onClick}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginBottom: '10px', padding: 0, fontSize: '12px', color: T.muted, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginBottom: '10px', padding: 0, fontSize: 'var(--text-sm)', color: T.muted, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
             <svg width="10" height="10" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M9 2L4 7l5 5" /></svg>
             {back.label}
           </button>
         )}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
           <div style={{ minWidth: 0, flex: '1 1 auto' }}>
-            <h1 style={{ ...T.type.h1, fontSize: isMobile ? '18px' : '20px', margin: 0, color: T.text, overflowWrap: 'anywhere' }}>{title}</h1>
-            {subtitle && <div style={{ fontSize: '13px', color: T.muted, marginTop: '3px' }}>{subtitle}</div>}
+            {/* A page title the size of ClientLaunch's console heading. */}
+            <h1 style={{ ...(isMobile ? T.type.h1 : T.type.display), margin: 0, color: T.text, overflowWrap: 'anywhere', textWrap: 'balance' }}>{title}</h1>
+            {subtitle && <div style={{ fontSize: 'var(--text-md)', color: T.muted, marginTop: '6px', maxWidth: '62ch' }}>{subtitle}</div>}
           </div>
           {actions && <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, flexWrap: 'wrap' }}>{actions}</div>}
         </div>

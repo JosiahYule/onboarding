@@ -20,7 +20,7 @@ export default function SearchInput({ value, onChange, placeholder = 'Search…'
       />
       {value && (
         <button type="button" aria-label="Clear search" onClick={() => onChange('')} className="il-link-subtle"
-          style={{ position: 'absolute', right: '6px', top: '50%', transform: 'translateY(-50%)', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', borderRadius: '6px', cursor: 'pointer', color: T.subtle, fontSize: '16px', lineHeight: 1, padding: 0 }}>
+          style={{ position: 'absolute', right: '6px', top: '50%', transform: 'translateY(-50%)', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', borderRadius: 'var(--radius-md)', cursor: 'pointer', color: T.subtle, fontSize: 'var(--text-lg)', lineHeight: 1, padding: 0 }}>
           ×
         </button>
       )}

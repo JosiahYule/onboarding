@@ -55,7 +55,7 @@ export default function Menu({ items, label = 'More actions', align = 'right', t
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
           height: '30px', minWidth: '30px', padding: triggerLabel ? '0 10px' : 0,
           borderRadius: T.radiusSm, border: `1px solid ${T.border}`, background: T.surface,
-          color: T.muted, cursor: 'pointer', fontFamily: 'inherit', fontSize: '12px', fontWeight: 500,
+          color: T.muted, cursor: 'pointer', fontFamily: 'inherit', fontSize: 'var(--text-sm)', fontWeight: 500,
         }}
       >
         {triggerLabel}
@@ -90,17 +90,17 @@ export default function Menu({ items, label = 'More actions', align = 'right', t
                 className={item.danger ? 'il-menu-item il-menu-item-danger' : 'il-menu-item'}
                 style={{
                   display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px',
-                  border: 'none', borderRadius: '6px', background: 'none', cursor: item.disabled ? 'default' : 'pointer',
-                  fontFamily: 'inherit', fontSize: '13px', color: item.danger ? T.danger : T.text,
+                  border: 'none', borderRadius: 'var(--radius-md)', background: 'none', cursor: item.disabled ? 'default' : 'pointer',
+                  fontFamily: 'inherit', fontSize: 'var(--text-base)', color: item.danger ? T.danger : T.text,
                   opacity: item.disabled ? 0.5 : 1,
                 }}
               >
                 {item.label}
-                {item.hint && <span style={{ display: 'block', fontSize: '11px', color: T.subtle, marginTop: '1px' }}>{item.hint}</span>}
+                {item.hint && <span style={{ display: 'block', fontSize: 'var(--text-xs)', color: T.subtle, marginTop: '1px' }}>{item.hint}</span>}
               </button>
             )
           })}
-          {actionable.length === 0 && <div style={{ padding: '8px 10px', fontSize: '12px', color: T.subtle }}>No actions</div>}
+          {actionable.length === 0 && <div style={{ padding: '8px 10px', fontSize: 'var(--text-sm)', color: T.subtle }}>No actions</div>}
         </div>
       )}
     </div>

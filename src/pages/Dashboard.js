@@ -18,20 +18,23 @@ import { ROLE } from '../config'
 const COLS = '32px minmax(0, 2fr) minmax(0, 1.4fr) minmax(120px, 1fr) 120px 90px'
 
 const S = {
-  statLabel: { fontSize: '11px', color: T.subtle, marginBottom: '5px', fontWeight: 600, letterSpacing: '0.4px', textTransform: 'uppercase' },
-  tableHeader: { display: 'grid', gridTemplateColumns: COLS, padding: '14px 12px', margin: '0 -12px', borderBottom: `1px solid ${T.borderSubtle}`, fontSize: '11px', color: T.subtle, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', alignItems: 'center', gap: '16px' },
+  statLabel: { fontSize: 'var(--text-xs)', color: T.subtle, marginBottom: '5px', fontWeight: 600, letterSpacing: '0.4px', textTransform: 'uppercase' },
+  tableHeader: { display: 'grid', gridTemplateColumns: COLS, padding: '14px 12px', margin: '0 -12px', borderBottom: `1px solid ${T.borderSubtle}`, fontSize: 'var(--text-xs)', color: T.subtle, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', alignItems: 'center', gap: '16px' },
   tableRow: { display: 'grid', gridTemplateColumns: COLS, padding: '14px 12px', margin: '0 -12px', width: 'calc(100% + 24px)', alignItems: 'center', gap: '16px', cursor: 'pointer', borderRadius: T.radiusMd, border: 'none', borderBottom: `1px solid ${T.borderSubtle}`, background: 'none', font: 'inherit', textAlign: 'left', color: 'inherit' },
-  avatar: { width: '28px', height: '28px', borderRadius: '50%', fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' },
-  avatarLg: { width: '38px', height: '38px', borderRadius: '10px', fontSize: '13px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  avatar: { width: '28px', height: '28px', borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-xs)', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  avatarLg: { width: '38px', height: '38px', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-base)', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   truncate: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-  progressTrack: { flex: 1, height: '5px', background: T.borderSubtle, borderRadius: '99px', overflow: 'hidden' },
-  phasePill: { fontSize: '11px', padding: '2px 8px', borderRadius: '99px', background: T.brandLight, color: T.brand, fontWeight: 600, whiteSpace: 'nowrap' },
+  progressTrack: { flex: 1, height: '4px', background: T.border, borderRadius: '999px', overflow: 'hidden' },
+  // ClientLaunch's .tag: a bordered label that marks the exception.
+  phasePill: { fontSize: 'var(--text-xs)', padding: '1px 6px', borderRadius: T.radiusSm, border: `1px solid ${T.border}`, background: T.surface, color: T.muted, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', whiteSpace: 'nowrap' },
 }
 
+// The tag keeps the meaning colour has everywhere in the shared system: blue
+// for underway, amber for something waiting on ISL, plain for not yet.
 function phasePillStyle(tone) {
-  if (tone === 'warning') return { ...S.phasePill, background: T.warningBg, color: T.warning }
-  if (tone === 'neutral') return { ...S.phasePill, background: T.hoverBg, color: T.muted }
-  return S.phasePill
+  if (tone === 'warning') return { ...S.phasePill, borderColor: 'transparent', background: T.warningBg, color: T.warning }
+  if (tone === 'neutral') return S.phasePill
+  return { ...S.phasePill, borderColor: 'transparent', background: T.brandLight, color: T.brandStrong }
 }
 
 function Progress({ pct }) {
@@ -39,9 +42,9 @@ function Progress({ pct }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }} aria-label={`${pct}% complete`}>
       <div style={S.progressTrack}>
-        <div className="il-progress-fill" style={{ height: '100%', width: `${pct}%`, borderRadius: '99px', background: done ? T.success : `linear-gradient(90deg, ${T.brand}, ${T.brandMid})` }} />
+        <div className="il-progress-fill" style={{ height: '100%', width: `${pct}%`, borderRadius: '99px', background: done ? T.success : T.brand }} />
       </div>
-      <span className="il-tabular" style={{ fontSize: '12px', fontWeight: 600, color: done ? T.success : T.text, minWidth: '34px', textAlign: 'right' }}>{pct}%</span>
+      <span className="il-tabular" style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: done ? T.success : T.text, minWidth: '34px', textAlign: 'right' }}>{pct}%</span>
     </div>
   )
 }
@@ -85,13 +88,13 @@ export default function Dashboard({ session, userProfile, onViewOnboarding, onNa
         ].map(stat => (
           <div key={stat.label} className="il-tile" style={{ padding: isMobile ? '13px 14px' : '18px 22px' }}>
             <div style={S.statLabel}>{stat.label}</div>
-            <AnimatedNumber value={loading ? 0 : stat.value} style={{ fontSize: isMobile ? '22px' : '26px', fontWeight: 700, letterSpacing: '-0.8px', color: T.text }} />
+            <AnimatedNumber value={loading ? 0 : stat.value} style={{ fontSize: isMobile ? 'var(--text-xl)' : 'var(--text-2xl)', fontWeight: 700, letterSpacing: '-0.8px', color: T.text }} />
           </div>
         ))}
       </section>
 
       {offNames.length > 0 && (
-        <div role="status" style={{ margin: isMobile ? '10px 16px 0' : `14px ${px} 0`, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', background: T.successBg, border: `1px solid ${T.successBorder}`, borderRadius: T.radiusMd, fontSize: '12px', color: T.success }}>
+        <div role="status" style={{ margin: isMobile ? '10px 16px 0' : `14px ${px} 0`, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', background: T.successBg, border: `1px solid ${T.successBorder}`, borderRadius: T.radiusMd, fontSize: 'var(--text-sm)', color: T.success }}>
           <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true" style={{ flexShrink: 0 }}>
             <rect x="1" y="3" width="12" height="10" rx="1" /><path d="M1 6h12M4 1v4M10 1v4" />
           </svg>
@@ -151,10 +154,10 @@ export default function Dashboard({ session, userProfile, onViewOnboarding, onNa
                   <div aria-hidden="true" style={{ ...S.avatarLg, ...avatarStyle(name) }}>{getInitials(name)}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
-                      <span style={{ ...S.truncate, fontSize: '14px', fontWeight: 500, color: T.text }}>{name}</span>
+                      <span style={{ ...S.truncate, fontSize: 'var(--text-md)', fontWeight: 500, color: T.text }}>{name}</span>
                       <span style={{ ...phasePillStyle(phase.tone), flexShrink: 0 }}>{phase.label}</span>
                     </div>
-                    <div style={{ ...S.truncate, fontSize: '12px', color: T.muted, marginBottom: '8px' }}>{o.employees.roles?.name || 'No role'}</div>
+                    <div style={{ ...S.truncate, fontSize: 'var(--text-sm)', color: T.muted, marginBottom: '8px' }}>{o.employees.roles?.name || 'No role'}</div>
                     <Progress pct={pct} />
                   </div>
                   <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true" style={{ flexShrink: 0, color: T.subtle }}><path d="M5 3l4 4-4 4" /></svg>
@@ -179,18 +182,18 @@ export default function Dashboard({ session, userProfile, onViewOnboarding, onNa
                   onClick={() => onViewOnboarding(o.id)}>
                   <div aria-hidden="true" style={{ ...S.avatar, ...avatarStyle(name) }}>{getInitials(name)}</div>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ ...S.truncate, fontSize: '13px', fontWeight: 500, color: T.text }}>{name}</div>
-                    <div style={{ ...S.truncate, fontSize: '12px', color: T.subtle, marginTop: '2px' }}>
+                    <div style={{ ...S.truncate, fontSize: 'var(--text-base)', fontWeight: 500, color: T.text }}>{name}</div>
+                    <div style={{ ...S.truncate, fontSize: 'var(--text-sm)', color: T.subtle, marginTop: '2px' }}>
                       {o.employees.email || 'No email on file'}
                       {uploadedDocs > 0 && (
                         <span style={{ color: T.success }}> · {uploadedDocs} doc{uploadedDocs > 1 ? 's' : ''} uploaded</span>
                       )}
                     </div>
                   </div>
-                  <div style={{ ...S.truncate, fontSize: '13px', color: T.text }}>{o.employees.roles?.name || '—'}</div>
+                  <div style={{ ...S.truncate, fontSize: 'var(--text-base)', color: T.text }}>{o.employees.roles?.name || '—'}</div>
                   <Progress pct={pct} />
                   <div><span style={phasePillStyle(phase.tone)}>{phase.label}</span></div>
-                  <div className="il-tabular" style={{ fontSize: '13px', color: T.subtle, textAlign: 'right' }}>
+                  <div className="il-tabular" style={{ fontSize: 'var(--text-base)', color: T.subtle, textAlign: 'right' }}>
                     {formatDate(o.employees.hire_date, { month: 'short', day: 'numeric' })}
                   </div>
                 </button>

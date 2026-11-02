@@ -28,7 +28,7 @@ export default function ConfirmModal({ title, message, confirmLabel, confirmDang
       initialFocus={confirmDanger ? 'first' : 'last'}
       footer={(
         <>
-          <Button variant="glass" onClick={onCancel} disabled={confirming}>
+          <Button variant="secondary" onClick={onCancel} disabled={confirming}>
             Cancel
           </Button>
           <Button

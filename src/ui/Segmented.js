@@ -27,8 +27,11 @@ export default function Segmented({ options, value, onChange, label, fullWidth =
       aria-label={label}
       onKeyDown={onKeyDown}
       style={{
-        display: fullWidth ? 'flex' : 'inline-flex', gap: '2px', padding: '3px',
-        background: T.hoverBg, borderRadius: T.radiusMd, maxWidth: '100%', overflowX: 'auto',
+        // ClientLaunch's .segmented: one bordered box divided by hairlines, the
+        // active option a solid blue field rather than a raised tile.
+        display: fullWidth ? 'flex' : 'inline-flex',
+        border: `1px solid ${T.border}`, borderRadius: T.radiusMd, background: T.surface,
+        maxWidth: '100%', overflowX: 'auto',
       }}
     >
       {options.map((o, i) => {
@@ -45,13 +48,13 @@ export default function Segmented({ options, value, onChange, label, fullWidth =
             className="il-segment"
             style={{
               flex: fullWidth ? 1 : undefined,
-              padding: pad, borderRadius: '6px', border: 'none',
-              background: active ? T.surface : 'transparent',
-              boxShadow: active ? T.shadowSm : 'none',
-              color: active ? T.text : T.muted,
-              fontSize: size === 'sm' ? '12px' : '13px', fontWeight: active ? 600 : 500,
-              fontFamily: 'inherit', cursor: 'pointer', whiteSpace: 'nowrap',
-              transition: 'background 0.12s ease, color 0.12s ease, box-shadow 0.12s ease',
+              padding: pad, borderRadius: 0, border: 'none',
+              borderLeft: i === 0 ? 'none' : `1px solid ${active || options[i - 1]?.value === value ? T.brand : T.border}`,
+              background: active ? T.brand : T.surface,
+              color: active ? T.btnPrimaryFg : T.text,
+              fontSize: size === 'sm' ? 'var(--text-base)' : 'var(--text-md)', fontWeight: 600,
+              fontFamily: 'var(--font-heading)', cursor: 'pointer', whiteSpace: 'nowrap',
+              transition: 'background 0.12s ease, color 0.12s ease',
             }}
           >
             {o.label}

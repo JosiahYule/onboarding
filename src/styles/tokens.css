@@ -1,0 +1,349 @@
+/* ==========================================================================
+   COPIED FROM ClientLaunch. Do not edit here.
+
+   Source of truth: JosiahYule/clientonboarding  src/styles/tokens.css
+   Rules for using it: clientonboarding/docs/design-system.md
+
+   Integrated Launch, ClientLaunch and ClientWatch share one palette, one type
+   scale and one set of shapes. To change a colour or a size, change it in
+   ClientLaunch first, then copy the file here and into ClientWatch unchanged,
+   so the three apps never drift apart. Anything Integrated Launch needs that
+   ClientLaunch does not have goes in index.css under "Integrated Launch
+   extras", built from these tokens rather than from new hex values.
+   ========================================================================== */
+
+/* Design tokens.
+ *
+ * White first. Surfaces are white, the page behind them is white, and
+ * separation comes from a hairline rather than a tint — the beige canvas and
+ * the tinted "room" the client window floated in are both gone. What is left
+ * to carry structure: a 1px border, 4px corners, and space.
+ *
+ * One palette for both sides of the product. A rep and a client see the same
+ * type, the same controls and the same spacing; what differs is what the screen
+ * says, and one explicit marker naming whose screen it is. Anything more and
+ * "consistent" becomes "indistinguishable".
+ *
+ * Three colours carry meaning and nothing else does: ISL blue for the brand,
+ * the primary action and "you are here"; green for work that is finished; amber
+ * for work sitting with ISL rather than with the client. Neither green nor
+ * amber is ever decorative — if one appears, it is saying something about state.
+ */
+
+:root {
+  /* Tells the browser which way its own controls should be drawn. Without it a
+     checkbox, a date picker and a scrollbar all stay in light dress on a dark
+     page — and the attestation checkbox on a dark contract was a white square
+     sitting on a near-black card. */
+  color-scheme: light;
+
+  /* Surfaces. `sunken` is the only non-white grey, and it belongs inside a
+     control — a table head, a search field — never under a whole panel. */
+  --canvas: #ffffff;
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-sunken: #f6f7f8;
+
+  /* Neutrals, warm rather than blue-grey. Every line on screen is one of these:
+     `border` for a control, `border-card` for a card, `border-subtle` for a
+     rail edge or header rule, `border-faint` for a rule inside a list. */
+  --border: #e0e0e3;
+  --border-card: #ececee;
+  --border-subtle: #f0f0f2;
+  --border-faint: #f4f4f6;
+  --border-strong: #d9d9dd;
+
+  /* Three greys for words, and every one of them can be read: body text,
+     secondary text (a lede, a label, a nav row at rest), and tertiary text (a
+     caption, a timestamp, a step number). Hierarchy below that comes from size
+     and weight, not from a paler grey. There used to be five, and the lighter
+     three measured 3.2, 2.9 and 2.4 to 1 on white, under the 4.5:1 small text
+     needs. Each of these clears 4.5:1 on every surface it sits on, the tinted
+     ones included.
+
+     `disabled` is for controls that cannot be used, which accessibility rules
+     exempt, and which have to look it. Never for text someone needs to read. */
+  --text: #1d1f20;
+  --muted: #5c5f63;
+  --subtle: #6c6f74;
+  --disabled: #a5a7ab;
+
+  /* ISL blue: the brand, the primary action, and the "you are here" marker.
+     One colour doing three jobs is what keeps a screen calm. */
+  --brand: #0070ca;
+  --brand-strong: #005ca6;
+  --brand-deep: #00457d;
+  --brand-mid: #4d9bec;
+  /* Two tints, and they are not interchangeable: the paler one backs an active
+     nav row, the warmer one an avatar. */
+  --brand-light: #f1f7fd;
+  --brand-tint: #e8f1fb;
+
+  /* Green says "signed" and "Yes" in text as often as it fills a dot, so it is
+     held to the same 4.5:1 as the amber below. #4b8a68 was 4.09:1 on white
+     and 3.69:1 on its tint. Same hue, a shade darker. */
+  --success: #42795c;
+  --success-bg: #eef5f1;
+  /* Dark enough to read as text: amber carries "required" and every message
+     about outstanding work, usually at 12–13px. #a8763a was 3.95:1 on white
+     and 3.61:1 on its own tint, under the 4.5:1 small text needs. Same hue. */
+  --warning: #916632;
+  --warning-bg: #faf4ec;
+  --danger: #c1362f;
+  --danger-bg: #fdf1f0;
+  --danger-border: #f6d7d5;
+
+  /* Primary actions are ISL blue, not near-black. */
+  --btn-primary-bg: var(--brand);
+  --btn-primary-hover: var(--brand-strong);
+  --btn-primary-active: var(--brand-deep);
+  --btn-primary-fg: #ffffff;
+
+  /* Nothing on the page floats, so nothing on the page has a shadow: a card is
+     a hairline and space. `lg` survives for the two things that genuinely sit
+     above the page — a sheet over its scrim, and the edit-trail drawer — where
+     a border alone leaves a fixed panel merged into what it covers. */
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-lg: 0 12px 32px rgba(13, 20, 33, 0.1);
+  --focus: var(--brand);
+
+  /* One radius. Circles are drawn explicitly, on the step marks and nowhere
+     else, so the four names below stay for the components that read them. */
+  --radius-sm: 4px;
+  --radius-md: 4px;
+  --radius-lg: 4px;
+  --radius-xl: 4px;
+
+  --control-h: 38px;
+  --control-h-lg: 46px;
+  /* Small controls are the ones a thumb misses. Named here so a phone can
+     raise the floor to 44px in one place rather than per component. */
+  --control-h-sm: 36px;
+  --ring: 0 0 0 3px rgba(0, 112, 202, 0.15);
+
+  /* The height of the chrome pinned to the top of a phone screen — the brand
+     row plus the tab strip. Sticky section headings and scroll-into-view
+     targets offset by it so nothing lands underneath. */
+  --mobile-header-h: 0px;
+
+  /* Safe areas resolve to 0 everywhere that has none, so these can be added
+     unconditionally rather than behind a support query. */
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+
+  /* Chrome that floats over scrolling content. Nearly opaque — a heavy frost
+     is the kind of effect that dates a product. */
+  --glass: rgba(255, 255, 255, 0.92);
+  --glass-strong: rgba(255, 255, 255, 0.97);
+  --glass-border: var(--border);
+  --glass-highlight: none;
+  --glass-filter: saturate(140%) blur(12px);
+  --glass-shadow: var(--shadow-lg);
+
+  /* Two hovers, because they belong to different things: an outlined button
+     fills a shade darker than a nav row does. */
+  --hover-bg: #f6f7f8;
+  --row-hover: #fafafb;
+  --scrollbar-thumb: #d9d9dd;
+
+  /* The Apple system font, nothing downloaded. `-apple-system` resolves Display
+     and Text by optical size on Apple platforms, so the two stacks are a
+     semantic distinction that also lands somewhere sensible elsewhere: Segoe UI
+     on Windows and Roboto on Android, both by way of `system-ui`.
+     Headings, buttons, the brand lockup, numerals in marks and card titles take
+     `heading`; everything else takes `body`. */
+  --font-heading: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', system-ui,
+    sans-serif;
+  --font-body: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', system-ui,
+    sans-serif;
+  --sans: var(--font-body);
+
+  /* The type scale. Eight sizes, and every font-size in the app is one of them.
+     There used to be twenty-three, half-pixel steps among them (12, 12.5, 13,
+     13.5, 14, 14.5), close enough to look like the same size and far enough
+     apart to make a page's rhythm feel slightly off.
+
+     Page titles take `2xl`; `3xl` is kept for the two moments that are a
+     welcome rather than a heading — the sign-in and the client's overview. */
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 28px;
+  --text-3xl: 40px;
+
+  /* Where a sticky side column comes to rest: the page's own top inset, so the
+     contract checklist lines up with the card beside it instead of being
+     pushed below it from the first frame. The staff view adds its bar. */
+  --sticky-offset: 44px;
+  --content-wide: 1140px;
+  --content-mid: 860px;
+  --content-narrow: 680px;
+  --gutter: 32px;
+  --rail-w: 252px;
+}
+
+/* ---------- Phones ----------
+   Two things change, and they are the two that decide whether a form is usable
+   with a thumb: controls get taller, and the gutter gets narrower so the
+   content they hold does not. */
+@media (max-width: 720px) {
+  :root {
+    --gutter: 20px;
+    --control-h: 46px;
+    --control-h-lg: 50px;
+    /* Nothing below 44px on a phone, including the controls a desktop draws
+       small — a row action a thumb has to find is not a small control. */
+    --control-h-sm: 44px;
+    --mobile-header-h: 108px;
+  }
+}
+
+@media (max-width: 560px) {
+  :root {
+    --gutter: 16px;
+  }
+}
+
+/* A stylus or a mouse on a narrow window does not need a 46px control; a finger
+   on a wide tablet does. Pointer coarseness is the better signal of the two, so
+   it gets the last word. */
+@media (pointer: coarse) {
+  :root {
+    --control-h: 46px;
+    --control-h-lg: 50px;
+    --control-h-sm: 44px;
+  }
+}
+
+/* Dark is the same system with the lights off: the same hairlines, the same
+   single accent, the same green-means-done and amber-means-waiting. Nothing is
+   introduced here that does not exist above. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --canvas: #0e1116;
+  --bg: #0e1116;
+  --surface: #151920;
+  --surface-raised: #1b202a;
+  --surface-sunken: #191e26;
+
+  --border: #2b313b;
+  --border-card: #242a33;
+  --border-subtle: #1f242d;
+  --border-faint: #1b2029;
+  --border-strong: #3a4350;
+
+  --text: #f2f4f7;
+  --muted: #a8adb4;
+  --subtle: #8b9098;
+  --disabled: #6c7179;
+
+  --brand: #4d9bec;
+  --brand-strong: #6fb0f2;
+  --brand-deep: #8cc2f6;
+  --brand-mid: #79b4f0;
+  --brand-light: #15243a;
+  --brand-tint: #1a2c45;
+
+  --success: #6aa987;
+  --success-bg: #16241d;
+  --warning: #c9995e;
+  --warning-bg: #272016;
+  --danger: #e2716a;
+  --danger-bg: #2a1817;
+  --danger-border: #45272a;
+
+  --btn-primary-bg: var(--brand);
+  --btn-primary-hover: var(--brand-strong);
+  --btn-primary-active: var(--brand-deep);
+  --btn-primary-fg: #0b1220;
+  --ring: 0 0 0 3px rgba(77, 155, 236, 0.24);
+
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.55);
+
+  --glass: rgba(21, 25, 32, 0.9);
+  --glass-strong: rgba(21, 25, 32, 0.97);
+  --glass-border: #2b313b;
+
+  --hover-bg: #1d222b;
+  --row-hover: #171c24;
+  --scrollbar-thumb: #3a4350;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --canvas: #0e1116;
+    --bg: #0e1116;
+    --surface: #151920;
+    --surface-raised: #1b202a;
+    --surface-sunken: #191e26;
+
+    --border: #2b313b;
+    --border-card: #242a33;
+    --border-subtle: #1f242d;
+    --border-faint: #1b2029;
+    --border-strong: #3a4350;
+
+    --text: #f2f4f7;
+    --muted: #a8adb4;
+    --subtle: #8b9098;
+    --disabled: #6c7179;
+
+    --brand: #4d9bec;
+    --brand-strong: #6fb0f2;
+    --brand-deep: #8cc2f6;
+    --brand-mid: #79b4f0;
+    --brand-light: #15243a;
+    --brand-tint: #1a2c45;
+
+    --success: #6aa987;
+    --success-bg: #16241d;
+    --warning: #c9995e;
+    --warning-bg: #272016;
+    --danger: #e2716a;
+    --danger-bg: #2a1817;
+    --danger-border: #45272a;
+
+    --btn-primary-bg: var(--brand);
+    --btn-primary-hover: var(--brand-strong);
+    --btn-primary-active: var(--brand-deep);
+    --btn-primary-fg: #0b1220;
+    --ring: 0 0 0 3px rgba(77, 155, 236, 0.24);
+
+    --shadow-sm: none;
+    --shadow-md: none;
+    --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.55);
+
+    --glass: rgba(21, 25, 32, 0.9);
+    --glass-strong: rgba(21, 25, 32, 0.97);
+    --glass-border: #2b313b;
+
+    --hover-bg: #1d222b;
+    --row-hover: #171c24;
+    --scrollbar-thumb: #3a4350;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass: var(--surface) !important;
+    --glass-strong: var(--surface) !important;
+    --glass-filter: none !important;
+  }
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root {
+    --glass: var(--surface) !important;
+    --glass-strong: var(--surface) !important;
+  }
+}

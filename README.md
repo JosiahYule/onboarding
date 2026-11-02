@@ -34,7 +34,7 @@ A full-featured employee onboarding management system built for **Integrated Sta
 | Frontend | React 19, Vite |
 | Backend & Database | Supabase (PostgreSQL + Auth + Edge Functions) |
 | Authentication | Supabase Auth with invite-based signup |
-| Styling | Custom CSS with Inter font, CSS variables |
+| Styling | The shared ISL design system (ClientLaunch's tokens), system font, CSS variables |
 | Testing | Vitest & React Testing Library |
 
 ---
@@ -117,7 +117,8 @@ src/
 │   ├── EditEmployeeModal.js # Edit employee details and role mid-onboarding
 │   └── Skeleton.js         # Loading placeholder screens
 ├── ui/                     # Shared, theme-aware building blocks — use these, not inline copies
-│   ├── theme.js            # Design tokens (T.*) mapped to the CSS variables in index.css
+│   ├── theme.js            # Design tokens (T.*) mapped to the CSS variables in styles/tokens.css
+│   ├── Brand.js            # The ISL gear, lockup and full logo (ported from ClientLaunch)
 │   ├── PageHeader.js       # Title, subtitle, actions and tabs for every page
 │   ├── Button.js           # primary / secondary / ghost / danger / danger-outline / link
 │   ├── Modal.js            # Dialog with focus trap, focus return, Escape and scroll lock
@@ -135,7 +136,10 @@ src/
 ├── App.js                  # Root component — auth, routing, role enforcement, code-split pages
 ├── config.js               # Routes, schedule buckets, and the three agencies (BRANDS)
 ├── supabaseClient.js       # Supabase client initialization
-└── index.css               # Global styles and CSS design tokens
+├── styles/
+│   ├── tokens.css          # Shared design tokens, COPIED from ClientLaunch; do not edit here
+│   └── signin.css          # Shared sign-in split, COPIED from ClientLaunch
+└── index.css               # Global styles, plus the few Integrated Launch-only tokens
 ```
 
 ---
@@ -194,19 +198,36 @@ npm run test:watch # watch mode
 
 ## Design System
 
-The UI is built on CSS custom properties defined in `index.css`, each with a light and a dark value. Components read them through `T` in `src/ui/theme.js`. **Don't hard-code colours in components**: a hex value that looks right in light mode is usually unreadable in dark mode. Add or reuse a token instead. Key tokens:
+Integrated Launch uses the **shared ISL design system**, the one ClientLaunch
+established and ClientWatch also follows. The rules, the reasoning behind them
+and the component patterns are written up once, in
+[`clientonboarding/docs/design-system.md`](https://github.com/JosiahYule/clientonboarding/blob/main/docs/design-system.md).
+Read that before adding a new screen.
 
-| Token | Light | Use |
-|---|---|---|
-| `--brand` | `#0066cc` | Links, focus, progress, selected state |
-| `--bg` / `--surface` | `#ffffff` | Page background / cards and panels |
-| `--surface-sunken` | `#fafaf9` | Table headers, weekends, inset panels |
-| `--border` / `--border-subtle` | `#e2e1dd` / `#eceae6` | Outlines / row dividers |
-| `--text` / `--muted` / `--subtle` | `#18181b` / `#70706b` / `#a4a39f` | Text hierarchy |
-| `--success`, `--warning`, `--danger` (+ `-bg`, `-border`) | green / amber / red | Status pills, banners, destructive actions |
-| `--btn-primary-bg` / `--btn-primary-fg` | near-black / white | Primary buttons (both themes) |
+How it is wired here:
 
-Typography uses Inter at weights 400–700 with tight letter-spacing for a clean, professional feel.
+- `src/styles/tokens.css` is ClientLaunch's token file, **copied unchanged**.
+  Never edit it in this repo: change it in ClientLaunch, then copy it into
+  Integrated Launch and ClientWatch so the three apps cannot drift apart.
+- `src/index.css` imports it and adds the few names Integrated Launch needs
+  that ClientLaunch does not have (`--success-border`, `--on-accent`, the
+  skeleton colours). Each is built from a shared token, not a new hex value.
+- Components read tokens through `T` in `src/ui/theme.js`. **Don't hard-code
+  colours, sizes or radii in components**: use `T.*` or `var(--…)`. A hex value
+  that looks right in light mode is usually unreadable in dark mode.
+- Font sizes come from the eight-step scale only: `var(--text-xs)` (11px)
+  through `var(--text-3xl)` (40px), also available as `T.fontSize.*`.
+
+The short version of the rules:
+
+| Rule | What it means in practice |
+|---|---|
+| White first, hairlines not shadows | Cards are `--surface` with a 1px `--border-card`. No drop shadows on the page; only modals, toasts and drawers get `--shadow-lg`. |
+| One radius | 4px everywhere. Circles only where something is genuinely round. |
+| Three colours carry meaning | ISL blue (`--brand`): brand, primary action, "you are here", in progress. Green: done. Amber: waiting on ISL. Never decorative. |
+| Primary buttons are ISL blue | `<Button>` (variant `primary`). Everything else is outlined (`secondary`) or text. |
+| System font | `--font-heading` / `--font-body`. Nothing downloaded. |
+| The lockup | `<BrandLockup sub="Integrated Launch" />`: the gear, "Integrated Staffing", and the product name underneath. |
 
 ### Dates
 
