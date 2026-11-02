@@ -18,6 +18,7 @@ import { computeProgress, isParentComplete } from '../utils/taskProgress'
 import { attachResolvedUrls } from '../utils/documentUrls'
 import EmptyState, { EmptyIcons } from '../ui/EmptyState'
 import { T } from '../ui/theme'
+import { BrandLockup, BrandMark } from '../ui/Brand'
 import { formatDate } from '../utils/dates'
 import { safeFileName } from '../utils/files'
 import CheckCircle from '../ui/CheckCircle'
@@ -30,12 +31,10 @@ import ThemeToggle from '../ui/ThemeToggle'
 import ProgressRing from '../ui/ProgressRing'
 import AnimatedNumber from '../ui/AnimatedNumber'
 import { avatarStyle } from '../utils/avatarColor'
-import { isSalesRep, openClientPortal } from '../utils/clientPortal'
 
 const BASE_STYLES = {
   app: { minHeight: '100vh', background: 'transparent', fontFamily: T.font, color: T.text },
-  logo: { fontSize: 'var(--text-md)', fontWeight: 600, color: T.brand, letterSpacing: '-0.2px' },
-  signout: { fontSize: 'var(--text-sm)', color: T.muted, background: 'none', border: `1px solid ${T.border}`, borderRadius: T.radiusSm, padding: '5px 12px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 },
+  signout: { fontSize: 'var(--text-sm)', color: T.muted, background: 'none', border: `1px solid ${T.border}`, borderRadius: T.radiusSm, padding: '5px 12px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, whiteSpace: 'nowrap' },
   sub: { fontSize: 'var(--text-base)', color: T.muted },
   progressRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' },
   progressTrack: { height: '6px', background: T.border, borderRadius: '999px', overflow: 'hidden' },
@@ -92,7 +91,6 @@ export default function EmployeePortal({ session, userProfile, onSwitchToAdmin }
   const { toast, showToast, hideToast } = useToast()
   const { isMobile } = useWindowSize()
   const [uploadingDocId, setUploadingDocId] = useState(null)
-  const [portalOpening, setPortalOpening] = useState(false)
   const celebrationTimer = useRef(null)
   // Recomputed each render so a long-lived tab doesn't stick to last year.
   const CURRENT_YEAR = getCurrentYear()
@@ -594,10 +592,12 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
   if (loading) return (
     <div style={styles.app}>
       <div className="il-header" data-topbar="true" style={styles.topbar}>
-        <div style={styles.logo}>Integrated Launch</div>
+        {/* The gear alone on a phone: the header also carries Admin view, the theme
+            toggle and Sign out, and a 390px screen has no room for a name too. */}
+        {isMobile ? <BrandMark size={26} /> : <BrandLockup size={26} sub="Integrated Launch" />}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           {onSwitchToAdmin && (
-            <button onClick={onSwitchToAdmin} style={{ fontSize: 'var(--text-sm)', color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
+            <button onClick={onSwitchToAdmin} style={{ fontSize: 'var(--text-sm)', color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, whiteSpace: 'nowrap' }}>
               ← Admin view
             </button>
           )}
@@ -630,10 +630,12 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
   return (
     <div style={styles.app}>
       <div className="il-header" data-topbar="true" style={styles.topbar}>
-        <div style={styles.logo}>Integrated Launch</div>
+        {/* The gear alone on a phone: the header also carries Admin view, the theme
+            toggle and Sign out, and a 390px screen has no room for a name too. */}
+        {isMobile ? <BrandMark size={26} /> : <BrandLockup size={26} sub="Integrated Launch" />}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           {onSwitchToAdmin && (
-            <button onClick={onSwitchToAdmin} style={{ fontSize: 'var(--text-sm)', color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
+            <button onClick={onSwitchToAdmin} style={{ fontSize: 'var(--text-sm)', color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, whiteSpace: 'nowrap' }}>
               ← Admin view
             </button>
           )}
@@ -695,7 +697,6 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
             // Unreleased features are labelled rather than silently greyed out.
             { id: 'time-off', label: 'Time off', disabled: !FEATURES.employeeTimeOff, badge: FEATURES.employeeTimeOff ? null : 'Soon' },
             { id: 'technical-tickets', label: 'Tech support', disabled: !FEATURES.techSupport, badge: FEATURES.techSupport ? null : 'Soon' },
-            isSalesRep(userProfile) && { id: 'client-packages', label: 'Client packages' },
           ].filter(Boolean)}
         />
       </div>
@@ -1170,35 +1171,6 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
                 ))}
               </>
             )}
-          </div>
-        )}
-
-        {activeTab === 'client-packages' && (
-          <div className="il-tab-content">
-            <div style={{ border: `1px solid ${T.border}`, borderRadius: T.radiusLg, padding: '24px', background: T.surface, maxWidth: '520px', boxShadow: T.shadowSm }}>
-              <div style={{ ...T.type.h2, marginBottom: '8px' }}>Client onboarding packages</div>
-              <p style={{ ...T.type.body, color: T.muted, margin: '0 0 20px' }}>
-                Send a new client company their contract, health &amp; safety questionnaire, and
-                staffing request form — then track what they've filled in and signed. This opens
-                the client portal in a new tab; you'll be signed in automatically.
-              </p>
-              <Button busy={portalOpening} busyLabel="Opening…"
-                onClick={async () => {
-                  if (portalOpening) return
-                  setPortalOpening(true)
-                  try {
-                    await openClientPortal()
-                    logAudit('client_portal_opened', 'client_portal', null, null)
-                  } catch (err) {
-                    showToast(err.message || 'Could not open the client portal.', 'error')
-                  } finally {
-                    setPortalOpening(false)
-                  }
-                }}
-              >
-                Open client portal
-              </Button>
-            </div>
           </div>
         )}
       </div>
