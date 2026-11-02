@@ -39,7 +39,7 @@ export default function ProgressRing({
       {showLabel && (
         <div style={{
           position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: size <= 48 ? '12px' : '15px', fontWeight: 700, color: labelColor,
+          fontSize: size <= 48 ? 'var(--text-sm)' : 'var(--text-md)', fontWeight: 700, color: labelColor,
           letterSpacing: '-0.4px', fontVariantNumeric: 'tabular-nums',
         }}>
           {Math.round(clamped)}%

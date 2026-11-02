@@ -24,7 +24,7 @@ export const STATUS_STYLES = {
 export function StatusPill({ status }) {
   const s = STATUS_STYLES[status] || STATUS_STYLES.pending
   return (
-    <span style={{ ...s, fontSize: '11px', fontWeight: 600, padding: '2px 9px', borderRadius: '99px', display: 'inline-block', whiteSpace: 'nowrap' }}>
+    <span style={{ ...s, fontSize: 'var(--text-xs)', fontWeight: 600, padding: '1px 7px', borderRadius: 'var(--radius-sm)', display: 'inline-block', whiteSpace: 'nowrap' }}>
       {status.charAt(0).toUpperCase() + status.slice(1)}
     </span>
   )

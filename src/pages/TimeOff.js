@@ -58,9 +58,9 @@ const SLOT_H = EVENT_H + EVENT_GAP
 
 const BASE_STYLES = {
   card: { background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radiusLg, boxShadow: T.shadowSm },
-  tHead: (cols) => ({ display: 'grid', gridTemplateColumns: cols, gap: '12px', padding: '10px 16px', background: T.surfaceSunken, borderBottom: `1px solid ${T.border}`, fontSize: '11px', fontWeight: 600, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.4px', alignItems: 'center' }),
-  tRow: (cols) => ({ display: 'grid', gridTemplateColumns: cols, gap: '12px', padding: '12px 16px', borderBottom: `1px solid ${T.borderSubtle}`, alignItems: 'center', fontSize: '13px', color: T.text }),
-  thBtn: { display: 'inline-flex', alignItems: 'center', padding: 0, background: 'none', border: 'none', cursor: 'pointer', font: 'inherit', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.4px' },
+  tHead: (cols) => ({ display: 'grid', gridTemplateColumns: cols, gap: '12px', padding: '10px 16px', background: T.surfaceSunken, borderBottom: `1px solid ${T.border}`, fontSize: 'var(--text-xs)', fontWeight: 600, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.4px', alignItems: 'center' }),
+  tRow: (cols) => ({ display: 'grid', gridTemplateColumns: cols, gap: '12px', padding: '12px 16px', borderBottom: `1px solid ${T.borderSubtle}`, alignItems: 'center', fontSize: 'var(--text-base)', color: T.text }),
+  thBtn: { display: 'inline-flex', alignItems: 'center', padding: 0, background: 'none', border: 'none', cursor: 'pointer', font: 'inherit', fontSize: 'var(--text-xs)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.4px' },
   approve: { background: T.successBg, color: T.success, border: `1px solid ${T.successBorder}` },
 }
 
@@ -388,7 +388,7 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
         aria-sort={active ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}
         style={{ ...s.thBtn, color: active ? T.text : T.muted }}>
         {label}
-        <span aria-hidden="true" style={{ fontSize: '9px', marginLeft: '4px', color: active ? T.text : T.subtle }}>
+        <span aria-hidden="true" style={{ fontSize: 'var(--text-xs)', marginLeft: '4px', color: active ? T.text : T.subtle }}>
           {active ? (sortDir === 'asc' ? '▲' : '▼') : '⬍'}
         </span>
       </button>
@@ -423,14 +423,14 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
       <div key={req.id} style={{ ...s.card, padding: '14px 16px', marginBottom: '10px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: '8px' }}>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: '14px', fontWeight: 500, color: T.text }}>{req.employee?.full_name || '—'}</div>
+            <div style={{ fontSize: 'var(--text-md)', fontWeight: 500, color: T.text }}>{req.employee?.full_name || '—'}</div>
             {overlapNames.length > 0 && (
-              <div style={{ fontSize: '11px', color: T.warning, marginTop: '2px' }}>{overlapNames.join(', ')} also off</div>
+              <div style={{ fontSize: 'var(--text-xs)', color: T.warning, marginTop: '2px' }}>{overlapNames.join(', ')} also off</div>
             )}
           </div>
           <StatusPill status={req.status} />
         </div>
-        <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', fontSize: '13px', color: T.muted, marginBottom: req.status === TIME_OFF_STATUS.PENDING ? '12px' : '0' }}>
+        <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', fontSize: 'var(--text-base)', color: T.muted, marginBottom: req.status === TIME_OFF_STATUS.PENDING ? '12px' : '0' }}>
           <span>{fmtDateRange(req.start_date, req.end_date)}</span>
           <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <TypeIcon type={req.type} size={12} />{TYPE_LABELS[req.type] || req.type}
@@ -439,7 +439,7 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
           {req.status === TIME_OFF_STATUS.PENDING && remaining != null && <span>→ {remainingText(remaining)} left</span>}
         </div>
         {req.status !== TIME_OFF_STATUS.PENDING && req.review_notes && (
-          <div style={{ fontSize: '12px', color: T.muted, fontStyle: 'italic', marginTop: '6px' }}>{req.review_notes}</div>
+          <div style={{ fontSize: 'var(--text-sm)', color: T.muted, fontStyle: 'italic', marginTop: '6px' }}>{req.review_notes}</div>
         )}
         {req.status === TIME_OFF_STATUS.PENDING && (
           <div>
@@ -500,7 +500,7 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
               {(filterStatus !== 'all' || filterEmployee) && (
                 <Button size="sm" variant="ghost" onClick={() => { setFilterStatus('all'); setFilterEmployee('') }}>Clear filters</Button>
               )}
-              <span aria-live="polite" style={{ fontSize: '12px', color: T.subtle, marginLeft: 'auto' }}>
+              <span aria-live="polite" style={{ fontSize: 'var(--text-sm)', color: T.subtle, marginLeft: 'auto' }}>
                 {loading ? '' : `${displayRequests.length} result${displayRequests.length !== 1 ? 's' : ''}`}
               </span>
             </div>
@@ -534,19 +534,19 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
                         <div role="cell" style={{ minWidth: 0 }}>
                           <div style={{ fontWeight: 500 }}>{req.employee?.full_name || '—'}</div>
                           {overlapNames.length > 0 && (
-                            <div style={{ fontSize: '11px', color: T.warning, marginTop: '2px' }}>{overlapNames.join(', ')} also off</div>
+                            <div style={{ fontSize: 'var(--text-xs)', color: T.warning, marginTop: '2px' }}>{overlapNames.join(', ')} also off</div>
                           )}
                         </div>
-                        <div role="cell" style={{ color: T.muted, fontSize: '12px' }}>{fmtDateRange(req.start_date, req.end_date)}</div>
-                        <div role="cell" style={{ display: 'flex', alignItems: 'center', gap: '5px', color: T.muted, fontSize: '12px', minWidth: 0 }}>
+                        <div role="cell" style={{ color: T.muted, fontSize: 'var(--text-sm)' }}>{fmtDateRange(req.start_date, req.end_date)}</div>
+                        <div role="cell" style={{ display: 'flex', alignItems: 'center', gap: '5px', color: T.muted, fontSize: 'var(--text-sm)', minWidth: 0 }}>
                           <TypeIcon type={req.type} size={12} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{TYPE_LABELS[req.type] || req.type}</span>
                         </div>
-                        <div role="cell" className="il-tabular">{req.business_days}d{req.is_half_day ? <span style={{ fontSize: '10px', color: T.muted }}> ½</span> : null}</div>
+                        <div role="cell" className="il-tabular">{req.business_days}d{req.is_half_day ? <span style={{ fontSize: 'var(--text-xs)', color: T.muted }}> ½</span> : null}</div>
                         <div role="cell"><StatusPill status={req.status} /></div>
-                        <div role="cell" style={{ fontSize: '13px' }}>{pending && remaining != null ? remainingText(remaining) : <span style={{ color: T.subtle }}>—</span>}</div>
+                        <div role="cell" style={{ fontSize: 'var(--text-base)' }}>{pending && remaining != null ? remainingText(remaining) : <span style={{ color: T.subtle }}>—</span>}</div>
                         <div role="cell">
                           {pending ? reviewButtons(req, true) : req.review_notes && (
-                            <div style={{ fontSize: '11px', color: T.muted, fontStyle: 'italic', maxWidth: '170px' }}>{req.review_notes}</div>
+                            <div style={{ fontSize: 'var(--text-xs)', color: T.muted, fontStyle: 'italic', maxWidth: '170px' }}>{req.review_notes}</div>
                           )}
                         </div>
                       </div>
@@ -554,7 +554,7 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
                         <div style={{ padding: '0 16px 12px' }}>
                           <input
                             className="il-input"
-                            style={{ maxWidth: '360px', padding: '6px 10px', fontSize: '12px' }}
+                            style={{ maxWidth: '360px', padding: '6px 10px', fontSize: 'var(--text-sm)' }}
                             aria-label={`Review note for ${req.employee?.full_name || 'this request'}`}
                             placeholder="Note to the employee (optional)"
                             value={reviewNotes[req.id] || ''}
@@ -598,7 +598,7 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
                     </svg>
                     <span style={{ minWidth: 0 }}>
                       <span style={{ display: 'block', fontWeight: 500, color: T.text }}>{row.employee.full_name}</span>
-                      <span style={{ display: 'block', fontSize: '11px', color: T.subtle, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.employee.email}</span>
+                      <span style={{ display: 'block', fontSize: 'var(--text-xs)', color: T.subtle, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.employee.email}</span>
                     </span>
                   </button>
                 )
@@ -624,9 +624,9 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
                       <div style={{ padding: '14px 16px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
                           {nameButton}
-                          <div className="il-tabular" style={{ fontSize: '18px', fontWeight: 600, color: remaining < 0 ? T.danger : T.text, flexShrink: 0 }}>{remaining}d</div>
+                          <div className="il-tabular" style={{ fontSize: 'var(--text-lg)', fontWeight: 600, color: remaining < 0 ? T.danger : T.text, flexShrink: 0 }}>{remaining}d</div>
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', fontSize: '12px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', fontSize: 'var(--text-sm)' }}>
                           {[['Total', totalCell], ['Used', <span className="il-tabular">{used}d</span>], ['Pending', <span className="il-tabular" style={{ color: pending > 0 ? T.warning : T.subtle }}>{pending > 0 ? `${pending}d` : '—'}</span>]].map(([label, value]) => (
                             <div key={label} style={{ background: T.surfaceSunken, borderRadius: T.radiusSm, padding: '8px 10px' }}>
                               <div style={{ color: T.muted, marginBottom: '2px' }}>{label}</div>
@@ -649,9 +649,9 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
                     {isExpanded && (
                       <div style={{ background: T.surfaceSunken, borderTop: `1px solid ${T.borderSubtle}` }}>
                         {row.requests.length === 0 ? (
-                          <div style={{ padding: '12px 24px', fontSize: '12px', color: T.subtle }}>No requests yet.</div>
+                          <div style={{ padding: '12px 24px', fontSize: 'var(--text-sm)', color: T.subtle }}>No requests yet.</div>
                         ) : row.requests.map(req => (
-                          <div key={req.id} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr auto' : '1fr 1fr 60px 100px', gap: '8px', padding: isMobile ? '10px 16px' : '10px 24px 10px 42px', borderBottom: `1px solid ${T.borderSubtle}`, fontSize: '12px', color: T.muted, alignItems: 'center' }}>
+                          <div key={req.id} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr auto' : '1fr 1fr 60px 100px', gap: '8px', padding: isMobile ? '10px 16px' : '10px 24px 10px 42px', borderBottom: `1px solid ${T.borderSubtle}`, fontSize: 'var(--text-sm)', color: T.muted, alignItems: 'center' }}>
                             <div>{fmtDateRange(req.start_date, req.end_date)}{isMobile && <div style={{ marginTop: '2px' }}>{TYPE_LABELS[req.type] || req.type} · {req.business_days}d</div>}</div>
                             {!isMobile && <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><TypeIcon type={req.type} size={11} />{TYPE_LABELS[req.type] || req.type}</div>}
                             {!isMobile && <div className="il-tabular">{req.business_days}d</div>}
@@ -672,13 +672,13 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
               <Button size="sm" variant="secondary" onClick={prevMonth} aria-label="Previous month">‹</Button>
-              <h2 aria-live="polite" style={{ ...T.type.h2, margin: 0, fontSize: '15px', color: T.text, minWidth: isMobile ? '130px' : '160px', textAlign: 'center' }}>
+              <h2 aria-live="polite" style={{ ...T.type.h2, margin: 0, fontSize: 'var(--text-md)', color: T.text, minWidth: isMobile ? '130px' : '160px', textAlign: 'center' }}>
                 {MONTH_NAMES[calMonth]} {calYear}
               </h2>
               <Button size="sm" variant="secondary" onClick={nextMonth} aria-label="Next month">›</Button>
               <Button size="sm" variant="ghost" onClick={() => { setCalYear(new Date().getFullYear()); setCalMonth(new Date().getMonth()) }}>Today</Button>
               {!isMobile && (
-                <div style={{ display: 'flex', gap: '14px', marginLeft: 'auto', alignItems: 'center', fontSize: '12px', color: T.muted }}>
+                <div style={{ display: 'flex', gap: '14px', marginLeft: 'auto', alignItems: 'center', fontSize: 'var(--text-sm)', color: T.muted }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span aria-hidden="true" style={{ width: '22px', height: '12px', borderRadius: '3px', ...eventColors(PALETTE[0], false) }} />Approved
                   </span>
@@ -694,7 +694,7 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
               <div style={{ ...s.card, overflow: 'hidden', minWidth: isMobile ? '560px' : 'auto' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: `1px solid ${T.border}`, background: T.surfaceSunken }}>
                   {DOW_LABELS.map((d, i) => (
-                    <div key={d} style={{ padding: isMobile ? '6px 4px' : '8px 10px', fontSize: '11px', fontWeight: 600, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'center', borderRight: i < 6 ? `1px solid ${T.borderSubtle}` : 'none' }}>
+                    <div key={d} style={{ padding: isMobile ? '6px 4px' : '8px 10px', fontSize: 'var(--text-xs)', fontWeight: 600, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'center', borderRight: i < 6 ? `1px solid ${T.borderSubtle}` : 'none' }}>
                       {isMobile ? d.slice(0, 1) : d}
                     </div>
                   ))}
@@ -722,11 +722,11 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
                             return (
                               <div key={di} style={{ height: DATE_ROW_H, padding: '5px 8px', display: 'flex', justifyContent: 'flex-end', alignItems: 'flex-start', background: cellBg(day, di), borderRight: di < 6 ? `1px solid ${T.borderSubtle}` : 'none' }}>
                                 {day && (isToday ? (
-                                  <span aria-label={`${day}, today`} style={{ background: T.brand, color: T.onAccent, borderRadius: '50%', width: '20px', height: '20px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700 }}>
+                                  <span aria-label={`${day}, today`} style={{ background: T.brand, color: T.onAccent, borderRadius: '50%', width: '20px', height: '20px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--text-xs)', fontWeight: 700 }}>
                                     {day}
                                   </span>
                                 ) : (
-                                  <span className="il-tabular" style={{ fontSize: '12px', color: isWeekend ? T.subtle : T.muted }}>{day}</span>
+                                  <span className="il-tabular" style={{ fontSize: 'var(--text-sm)', color: isWeekend ? T.subtle : T.muted }}>{day}</span>
                                 ))}
                               </div>
                             )
@@ -760,7 +760,7 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
                                   width: `calc(${(endCol - startCol + 1) * colPct}% - ${lOff + rOff}px)`,
                                   height: EVENT_H,
                                   ...eventColors(employeeColor(req.employee_id), isPending),
-                                  fontSize: '11px', fontWeight: 600,
+                                  fontSize: 'var(--text-xs)', fontWeight: 600,
                                   display: 'flex', alignItems: 'center', paddingLeft: '6px',
                                   overflow: 'hidden', whiteSpace: 'nowrap',
                                   borderRadius: `${startsThisWeek ? 4 : 0}px ${endsThisWeek ? 4 : 0}px ${endsThisWeek ? 4 : 0}px ${startsThisWeek ? 4 : 0}px`,
@@ -785,13 +785,13 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
         {subView === 'holidays' && (
           <div style={{ display: 'grid', gap: '16px', maxWidth: '760px' }}>
             <form onSubmit={e => { e.preventDefault(); addHoliday() }} style={{ ...s.card, padding: '18px 20px' }}>
-              <h2 style={{ ...T.type.h2, fontSize: '14px', margin: '0 0 14px', color: T.text }}>Add a holiday</h2>
+              <h2 style={{ ...T.type.h2, fontSize: 'var(--text-md)', margin: '0 0 14px', color: T.text }}>Add a holiday</h2>
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) 170px', gap: '0 12px' }}>
                 <Field label="Name"><input placeholder="e.g. Natal Day" value={newHolidayName} onChange={e => setNewHolidayName(e.target.value)} /></Field>
                 <Field label="Date"><input type="date" value={newHolidayDate} onChange={e => setNewHolidayDate(e.target.value)} /></Field>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: T.muted, cursor: 'pointer' }}>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: 'var(--text-base)', color: T.muted, cursor: 'pointer' }}>
                   <input type="checkbox" checked={newHolidayRepeats} onChange={e => setNewHolidayRepeats(e.target.checked)} style={{ width: '15px', height: '15px', cursor: 'pointer', accentColor: 'var(--brand)' }} />
                   Repeats every year on this date
                 </label>
@@ -817,10 +817,10 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
                       : s.tRow('minmax(0, 1fr) 120px 120px 90px')}>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontWeight: 500, color: T.text }}>{h.name}</div>
-                        {isMobile && <div style={{ fontSize: '12px', color: T.muted, marginTop: '2px' }}>{fmtDate(h.date)}{h.repeats_yearly ? ' · Every year' : ''}</div>}
+                        {isMobile && <div style={{ fontSize: 'var(--text-sm)', color: T.muted, marginTop: '2px' }}>{fmtDate(h.date)}{h.repeats_yearly ? ' · Every year' : ''}</div>}
                       </div>
-                      {!isMobile && <div style={{ color: T.muted, fontSize: '12px' }}>{fmtDate(h.date)}</div>}
-                      {!isMobile && <div style={{ fontSize: '12px', color: h.repeats_yearly ? T.success : T.subtle }}>{h.repeats_yearly ? 'Every year' : 'Once'}</div>}
+                      {!isMobile && <div style={{ color: T.muted, fontSize: 'var(--text-sm)' }}>{fmtDate(h.date)}</div>}
+                      {!isMobile && <div style={{ fontSize: 'var(--text-sm)', color: h.repeats_yearly ? T.success : T.subtle }}>{h.repeats_yearly ? 'Every year' : 'Once'}</div>}
                       <div style={{ textAlign: 'right' }}>
                         <span className="il-row-actions">
                           <Button size="xs" variant="ghost" style={{ color: T.danger }} busy={deletingHolidayId === h.id} busyLabel="…" onClick={() => deleteHoliday(h.id)} aria-label={`Remove ${h.name}`}>Remove</Button>

@@ -1,0 +1,266 @@
+/* ==========================================================================
+   COPIED FROM ClientLaunch (src/screens/SignIn.css). Do not edit here.
+   The sign-in split is shared by every ISL app so the first screen anyone sees
+   is recognisably the same family. Change it in ClientLaunch, then copy.
+   ========================================================================== */
+
+/* Sign in: form on the left, brand on the right.
+   The split is the whole viewport rather than a card floating in a room —
+   fewer edges, and the form gets to sit where the eye already is. */
+.signin {
+  min-height: 100vh;
+  display: grid;
+  /* 7:5, not 1:1. The two halves are not doing equal work — one holds the only
+     control on the screen and the other holds a logo — and an even split says
+     they are. */
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  background: var(--surface);
+}
+
+.signin__panel {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 40px;
+  padding: 44px clamp(28px, 6vw, 88px);
+}
+
+/* Centred vertically in the space left over, then held to a readable measure. */
+.signin__form {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  width: 100%;
+  max-width: 392px;
+  margin: 0 auto;
+}
+
+.signin__form .brand {
+  margin-bottom: 34px;
+}
+
+.signin__title {
+  margin: 0 0 6px;
+  font-family: var(--font-heading);
+  font-size: var(--text-3xl);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1;
+}
+
+.signin__sub {
+  margin: 0 0 22px;
+  max-width: 44ch;
+  color: var(--muted);
+  font-size: var(--text-md);
+  line-height: 1.55;
+}
+
+.signin__email {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.signin__form .segmented {
+  margin-bottom: 22px;
+}
+
+.signin__error {
+  margin: 0 0 18px;
+  padding: 10px 12px;
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-md);
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: var(--text-base);
+  line-height: 1.5;
+}
+
+/* 44px, not the 38px a control is elsewhere: this is the one field on the
+   screen, and it is the first thing anyone touches. */
+.signin__form input {
+  height: 44px;
+}
+
+/* Right-aligned under the password, where every login form puts it. */
+.signin__forgot {
+  display: block;
+  margin: 8px 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--brand);
+  font-size: var(--text-base);
+  font-weight: 500;
+}
+
+.signin__forgot:hover {
+  text-decoration: underline;
+}
+
+.signin__form .btn-block {
+  margin-top: 20px;
+}
+
+/* The way back out of the reset detour, held closer to the primary above it
+   than the 20px every other block button gets. */
+.signin__form .signin__cancel {
+  margin-top: 10px;
+}
+
+.signin__note {
+  margin: 12px 0 0;
+  color: var(--subtle);
+  font-size: var(--text-base);
+  line-height: 1.5;
+}
+
+.signin__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  max-width: 392px;
+  margin: 0 auto;
+  color: var(--subtle);
+  font-size: var(--text-sm);
+}
+
+/* ---------- Brand half ---------- */
+/* The house gradient, corner to corner, with a light source top-left and the
+   ISL gear running off the bottom corner behind the logo. Flat, the panel read
+   as a blue rectangle that could have belonged to anyone. */
+.signin__brand {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  padding: 40px;
+  margin: 12px 12px 12px 0;
+  border-radius: var(--radius-xl);
+  background:
+    radial-gradient(125% 95% at 20% 8%, rgba(255, 255, 255, 0.19), rgba(255, 255, 255, 0) 60%),
+    linear-gradient(140deg, #00549a 0%, #0070ca 100%);
+}
+
+/* The one element on the page that ignores its container's edges. It is the
+   real mark rather than an ornament, and at this opacity it is texture — you
+   read it as depth before you read it as a gear. */
+.signin__watermark {
+  position: absolute;
+  right: -21%;
+  bottom: -34%;
+  line-height: 0;
+  opacity: 0.075;
+  pointer-events: none;
+}
+
+.signin__watermark svg {
+  width: clamp(300px, 46vw, 560px);
+  height: auto;
+}
+
+.signin__logo {
+  position: relative;
+  width: min(280px, 76%);
+  height: auto;
+  color: #fff;
+}
+
+@media (max-width: 900px) {
+  .signin {
+    grid-template-columns: 1fr;
+  }
+
+  /* The brand panel becomes a band above the form rather than disappearing:
+     it is the only thing telling someone whose sign-in page this is. */
+  .signin__brand {
+    order: -1;
+    min-height: 148px;
+    padding: 28px;
+    margin: 12px 12px 0;
+  }
+
+  .signin__logo { width: min(212px, 68%); }
+
+  .signin__watermark {
+    right: -6%;
+    bottom: -64%;
+  }
+
+  .signin__watermark svg { width: clamp(260px, 44vw, 340px); }
+
+  /* The band above already carries the name, twice over. */
+  .signin__form > .brand { display: none; }
+
+  .signin__panel {
+    padding: 32px var(--gutter) 28px;
+  }
+
+  .signin__foot {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+}
+
+@media (max-width: 720px) {
+  .signin {
+    min-height: 100dvh;
+  }
+
+  /* ---------- The band ----------
+     148px of gradient plus a `space-between` panel under it put "Welcome back"
+     a third of the way down a phone screen, with a hole between the two. The
+     band gives back a third of its height and the form stops being centred in
+     the leftovers — on a screen this size it should start at the top and stay
+     there when the keyboard opens. */
+  .signin__brand {
+    min-height: 112px;
+    padding: 22px;
+    margin: max(10px, var(--safe-t)) 10px 0;
+    border-radius: var(--radius-lg);
+  }
+
+  .signin__logo { width: min(180px, 62%); }
+
+  .signin__watermark svg { width: 260px; }
+
+  .signin__panel {
+    gap: 28px;
+    padding: 26px var(--gutter) 20px;
+    padding-bottom: max(20px, var(--safe-b));
+  }
+
+  .signin__form {
+    flex: none;
+    justify-content: flex-start;
+    max-width: none;
+  }
+
+  .signin__title { font-size: var(--text-2xl); }
+
+  .signin__sub {
+    max-width: none;
+    margin-bottom: 24px;
+    font-size: var(--text-md);
+  }
+
+  .signin__form .segmented { margin-bottom: 24px; }
+  .signin__error { font-size: var(--text-md); padding: 12px 14px; }
+  .signin__note { font-size: var(--text-base); margin-top: 20px; }
+
+  /* A text button under a password field, at the size a thumb needs. */
+  .signin__forgot {
+    margin-top: 10px;
+    padding: 6px 0;
+    font-size: var(--text-md);
+  }
+
+  .signin__foot {
+    max-width: none;
+    font-size: var(--text-sm);
+  }
+}

@@ -68,7 +68,7 @@ export default function Modal({
       className="il-backdrop"
       style={{
         position: 'fixed', inset: 0, zIndex: 1000,
-        background: 'rgba(0,0,0,0.32)',
+        background: 'rgba(20, 20, 24, 0.32)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: '16px', fontFamily: T.font,
       }}
@@ -83,18 +83,19 @@ export default function Modal({
         tabIndex={-1}
         className="il-modal"
         style={{
-          background: 'var(--glass-strong)',
-          backdropFilter: 'var(--glass-filter)', WebkitBackdropFilter: 'var(--glass-filter)',
-          borderRadius: '18px',
-          border: '1px solid var(--glass-border)',
-          boxShadow: 'var(--glass-highlight), var(--shadow-lg)',
+          // Opaque paper with the one shadow ClientLaunch allows: a modal is
+          // one of the two things that genuinely sits above the page.
+          background: 'var(--surface)',
+          borderRadius: 'var(--radius-lg)',
+          border: '1px solid var(--border)',
+          boxShadow: 'var(--shadow-lg)',
           padding: '24px', width: '100%', maxWidth: `${maxWidth}px`,
           maxHeight: 'calc(100vh - 32px)', overflowY: 'auto', outline: 'none',
         }}
       >
         <h2 id={titleId} style={{ ...T.type.h2, margin: 0, color: T.text, marginBottom: description ? '8px' : '18px' }}>{title}</h2>
         {description && (
-          <div id={descId} style={{ fontSize: '13px', color: T.muted, lineHeight: 1.6, marginBottom: '20px' }}>{description}</div>
+          <div id={descId} style={{ fontSize: 'var(--text-md)', color: T.muted, lineHeight: 1.55, marginBottom: '20px' }}>{description}</div>
         )}
         {children}
         {footer && (

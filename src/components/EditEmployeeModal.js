@@ -90,12 +90,12 @@ export default function EditEmployeeModal({ employee, instanceId, onClose, onSav
     >
       <form onSubmit={handleSave} noValidate>
         {error && (
-          <div role="alert" style={{ fontSize: '12px', color: T.danger, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: T.radiusSm, padding: '10px 12px', marginBottom: '16px' }}>
+          <div role="alert" style={{ fontSize: 'var(--text-sm)', color: T.danger, background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: T.radiusSm, padding: '10px 12px', marginBottom: '16px' }}>
             {error}
           </div>
         )}
         {roleChanged && (
-          <div role="status" style={{ fontSize: '12px', color: T.warning, background: T.warningBg, border: `1px solid ${T.warningBorder}`, borderRadius: T.radiusSm, padding: '10px 12px', marginBottom: '16px', lineHeight: 1.5 }}>
+          <div role="status" style={{ fontSize: 'var(--text-sm)', color: T.warning, background: T.warningBg, border: `1px solid ${T.warningBorder}`, borderRadius: T.radiusSm, padding: '10px 12px', marginBottom: '16px', lineHeight: 1.5 }}>
             Changing the role resets all task progress and replaces the checklist with the new role's tasks.
           </div>
         )}

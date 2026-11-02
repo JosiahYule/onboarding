@@ -5,6 +5,7 @@ import { pageToPath, pathToPage, planPath, parseInstanceId, ROLE } from './confi
 import Button from './ui/Button'
 import Field from './ui/Field'
 import { T } from './ui/theme'
+import { BrandLockup, BrandLogo, BrandMark } from './ui/Brand'
 
 
 // Pages are split into their own chunks so the sign-in screen doesn't wait
@@ -233,35 +234,35 @@ useEffect(() => {
 
   if (!session) {
     const errorBox = error && (
-      <div role="alert" style={{ fontSize: '12px', color: T.danger, marginBottom: '16px', padding: '10px 12px', background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: T.radiusSm, lineHeight: 1.5 }}>
+      <div role="alert" style={{ fontSize: 'var(--text-sm)', color: T.danger, marginBottom: '16px', padding: '10px 12px', background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: T.radiusSm, lineHeight: 1.5 }}>
         {error}
       </div>
     )
-    const linkBtn = { width: '100%', marginTop: '10px', fontSize: '12px', color: T.muted, justifyContent: 'center' }
 
+    // The same split sign-in as ClientLaunch: the form on the left, the ISL
+    // panel on the right. Layout lives in styles/signin.css (copied from
+    // ClientLaunch); the form inside it is Integrated Launch's own.
     return (
-      <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: T.font, padding: '20px' }}>
-        <main className="il-auth" style={{ width: '100%', maxWidth: '380px' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '32px' }}>
-            <div aria-hidden="true" style={{ width: '48px', height: '48px', background: 'linear-gradient(135deg, #004db3 0%, #0080ff 100%)', borderRadius: T.radiusLg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '16px', fontWeight: 700, marginBottom: '18px', boxShadow: '0 4px 16px rgba(0,102,204,0.3)' }}>IL</div>
-            <h1 style={{ fontSize: '22px', fontWeight: 600, color: T.text, letterSpacing: '-0.6px', margin: '0 0 4px' }}>
+      <div className="signin">
+        <main className="signin__panel">
+          <div className="signin__form">
+            <BrandLockup size={34} sub="Integrated Launch" />
+            <h1 className="signin__title">
               {resetSent ? 'Check your email' : forgotPassword ? 'Reset your password' : 'Welcome back'}
             </h1>
-            <div style={{ fontSize: '13px', color: T.muted, textAlign: 'center' }}>
-              {resetSent ? 'A reset link is on its way.' : forgotPassword ? 'We’ll email you a link to set a new one.' : 'Sign in to Integrated Launch'}
-            </div>
-          </div>
+            <p className="signin__sub">
+              {resetSent ? 'A reset link is on its way.' : forgotPassword ? 'We’ll email you a link to set a new one.' : 'Sign in with your work email and password.'}
+            </p>
 
-          <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: '14px', padding: '28px', boxShadow: T.shadowMd }}>
             {resetSent ? (
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '13px', color: T.muted, lineHeight: 1.6, marginBottom: '20px' }}>
+              <>
+                <p style={{ fontSize: 'var(--text-md)', color: T.muted, lineHeight: 1.6, margin: '0 0 20px' }}>
                   If an account exists for <strong style={{ color: T.text, fontWeight: 500 }}>{email}</strong>, you’ll get an email with a link to set a new password. It can take a minute to arrive.
-                </div>
-                <Button variant="secondary" fullWidth onClick={() => { setResetSent(false); setForgotPassword(false) }}>
+                </p>
+                <Button variant="secondary" size="lg" fullWidth onClick={() => { setResetSent(false); setForgotPassword(false) }}>
                   Back to sign in
                 </Button>
-              </div>
+              </>
             ) : (
               <form onSubmit={e => { e.preventDefault(); forgotPassword ? handleForgotPassword() : handleLogin() }} noValidate>
                 <Field label="Email">
@@ -269,27 +270,43 @@ useEffect(() => {
                     value={email} onChange={e => setEmail(e.target.value)} autoFocus />
                 </Field>
                 {!forgotPassword && (
-                  <Field label="Password" style={{ marginBottom: '20px' }}>
+                  <Field label="Password" style={{ marginBottom: '0' }}>
                     <input id="login-password" type="password" autoComplete="current-password" placeholder="••••••••"
                       value={password} onChange={e => setPassword(e.target.value)} />
                   </Field>
                 )}
-                {errorBox}
-                <Button type="submit" fullWidth busy={authBusy} busyLabel={forgotPassword ? 'Sending…' : 'Signing in…'}>
-                  {forgotPassword ? 'Send reset link' : 'Sign in'}
-                </Button>
-                <Button variant="ghost" size="sm" style={linkBtn}
-                  onClick={() => { setForgotPassword(f => !f); setError('') }}>
-                  {forgotPassword ? 'Back to sign in' : 'Forgot password?'}
-                </Button>
+                {!forgotPassword && (
+                  <button type="button" className="signin__forgot" onClick={() => { setForgotPassword(true); setError('') }}>
+                    Forgot password?
+                  </button>
+                )}
+                <div style={{ marginTop: '20px' }}>
+                  {errorBox}
+                  <Button type="submit" size="lg" fullWidth busy={authBusy} busyLabel={forgotPassword ? 'Sending…' : 'Signing in…'}>
+                    {forgotPassword ? 'Send reset link' : 'Sign in'}
+                  </Button>
+                </div>
+                {forgotPassword && (
+                  <Button variant="secondary" size="lg" fullWidth style={{ marginTop: '10px' }}
+                    onClick={() => { setForgotPassword(false); setError('') }}>
+                    Back to sign in
+                  </Button>
+                )}
               </form>
             )}
           </div>
 
-          <div style={{ textAlign: 'center', marginTop: '24px', fontSize: '12px', color: T.subtle }}>
-            Integrated Staffing · Accountant Staffing · Administrative Staffing
-          </div>
+          <footer className="signin__foot">
+            <span>© {new Date().getFullYear()} Integrated Staffing Limited</span>
+          </footer>
         </main>
+
+        <aside className="signin__brand" aria-hidden="true">
+          <span className="signin__watermark">
+            <BrandMark size={560} tone="inverse" />
+          </span>
+          <BrandLogo className="signin__logo" />
+        </aside>
       </div>
     )
   }
@@ -311,9 +328,9 @@ useEffect(() => {
     return (
       <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: T.font, padding: '20px' }}>
         <div className="il-auth" role="alert" style={{ textAlign: 'center', maxWidth: '380px' }}>
-          <div style={{ fontSize: '16px', fontWeight: 600, color: T.text, marginBottom: '8px' }}>{title}</div>
-          <div style={{ fontSize: '13px', color: T.muted, marginBottom: '24px', lineHeight: 1.6 }}>{message}</div>
-          <div style={{ fontSize: '12px', color: T.subtle, marginBottom: '16px' }}>Signed in as {session.user.email}</div>
+          <div style={{ fontSize: 'var(--text-lg)', fontWeight: 600, color: T.text, marginBottom: '8px' }}>{title}</div>
+          <div style={{ fontSize: 'var(--text-base)', color: T.muted, marginBottom: '24px', lineHeight: 1.6 }}>{message}</div>
+          <div style={{ fontSize: 'var(--text-sm)', color: T.subtle, marginBottom: '16px' }}>Signed in as {session.user.email}</div>
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
             {failed && (
               <Button onClick={() => { profileUserId.current = null; fetchProfile(session.user.id) }}>Try again</Button>

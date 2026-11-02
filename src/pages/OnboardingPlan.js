@@ -23,17 +23,17 @@ const OWNERS = ['HR', 'Manager', 'IT']
 
 const S = {
   card: { background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radiusLg, padding: '18px 20px', boxShadow: T.shadowSm },
-  cardTitle: { fontSize: '11px', fontWeight: 600, color: T.subtle, textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 },
-  weekHeading: { fontSize: '11px', fontWeight: 700, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.6px', margin: '28px 0 8px' },
+  cardTitle: { fontSize: 'var(--text-xs)', fontWeight: 600, color: T.subtle, textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0 },
+  weekHeading: { fontSize: 'var(--text-xs)', fontWeight: 700, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.6px', margin: '28px 0 8px' },
   bucketHeader: { display: 'flex', alignItems: 'center', gap: '8px', minHeight: '34px', padding: '4px 6px', borderBottom: `1px solid ${T.borderSubtle}` },
   row: { display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 6px', borderBottom: `1px solid ${T.borderSubtle}`, borderRadius: T.radiusSm },
   subRow: { display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 6px 8px 42px', borderBottom: `1px solid ${T.borderSubtle}`, background: T.surfaceSunken },
   taskMain: { flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '8px', padding: '2px 0', background: 'none', border: 'none', font: 'inherit', textAlign: 'left', cursor: 'pointer', color: 'inherit' },
-  owner: { fontSize: '11px', padding: '2px 8px', borderRadius: '99px', background: T.hoverBg, color: T.muted, fontWeight: 500, flexShrink: 0 },
-  handle: { color: T.subtle, fontSize: '13px', lineHeight: 1, flexShrink: 0, userSelect: 'none', padding: '4px', margin: '-4px -2px' },
+  owner: { fontSize: 'var(--text-xs)', padding: '1px 6px', borderRadius: T.radiusSm, border: `1px solid ${T.border}`, background: T.surface, color: T.subtle, fontWeight: 400, flexShrink: 0 },
+  handle: { color: T.subtle, fontSize: 'var(--text-base)', lineHeight: 1, flexShrink: 0, userSelect: 'none', padding: '4px', margin: '-4px -2px' },
   form: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', padding: '10px 6px', borderBottom: `1px solid ${T.borderSubtle}` },
   insertLine: { height: '2px', background: T.brand, borderRadius: '2px', margin: '0 6px' },
-  detailRow: { display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '7px 0', fontSize: '13px', borderBottom: `1px solid ${T.borderSubtle}` },
+  detailRow: { display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '7px 0', fontSize: 'var(--text-base)', borderBottom: `1px solid ${T.borderSubtle}` },
 }
 
 export default function OnboardingPlan({ session, userProfile, instanceId, onBack, onNavigate }) {
@@ -246,15 +246,15 @@ export default function OnboardingPlan({ session, userProfile, instanceId, onBac
             : <CheckCircle checked={isChecked} label={`${task.name}: ${isChecked ? 'done' : 'not done'}`} onToggle={e => toggleTask(task.id, completions[task.id], e)} />}
           <button type="button" style={S.taskMain} onClick={toggleDetails} aria-expanded={hasSubtasks ? isTaskExpanded : isNoteExpanded}
             aria-label={hasSubtasks ? `${task.name}, ${completedSubtasks} of ${subtasks.length} subtasks done` : `${task.name}, ${hasNote ? 'has a note' : 'add a note'}`}>
-            <span style={{ fontSize: '13px', color: isChecked ? T.subtle : T.text, textDecoration: isChecked ? 'line-through' : 'none', overflowWrap: 'anywhere' }}>{task.name}</span>
+            <span style={{ fontSize: 'var(--text-base)', color: isChecked ? T.subtle : T.text, textDecoration: isChecked ? 'line-through' : 'none', overflowWrap: 'anywhere' }}>{task.name}</span>
             {!hasSubtasks && hasNote && !isNoteExpanded && (
               <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true" style={{ color: T.brand, flexShrink: 0 }}>
                 <path d="M2.5 2.5h9v6.5H6L3.5 11.5V9h-1z" strokeLinejoin="round" />
               </svg>
             )}
-            {task.isCustom && <span style={{ fontSize: '10px', color: T.subtle, flexShrink: 0 }}>custom</span>}
+            {task.isCustom && <span style={{ fontSize: 'var(--text-xs)', color: T.subtle, flexShrink: 0 }}>custom</span>}
           </button>
-          {hasSubtasks && <span className="il-tabular" style={{ fontSize: '11px', color: T.subtle, flexShrink: 0 }}>{completedSubtasks}/{subtasks.length}</span>}
+          {hasSubtasks && <span className="il-tabular" style={{ fontSize: 'var(--text-xs)', color: T.subtle, flexShrink: 0 }}>{completedSubtasks}/{subtasks.length}</span>}
           {task.owner && <span style={S.owner}>{task.owner}</span>}
           {canEdit && isMobile && (
             <button type="button" onClick={() => startEdit(task)} aria-label={`Edit ${task.name}`} className="il-btn-ghost"
@@ -280,7 +280,7 @@ export default function OnboardingPlan({ session, userProfile, instanceId, onBac
             {subtasks.map(s => (
               <div key={s.id} className="il-row" style={S.subRow}>
                 <CheckCircle size={15} checked={!!completions[s.id]} label={`${s.name}: ${completions[s.id] ? 'done' : 'not done'}`} onToggle={e => toggleTask(s.id, completions[s.id], e)} />
-                <span style={{ fontSize: '12px', color: completions[s.id] ? T.subtle : T.muted, textDecoration: completions[s.id] ? 'line-through' : 'none', flex: 1 }}>{s.name}</span>
+                <span style={{ fontSize: 'var(--text-sm)', color: completions[s.id] ? T.subtle : T.muted, textDecoration: completions[s.id] ? 'line-through' : 'none', flex: 1 }}>{s.name}</span>
               </div>
             ))}
           </div>
@@ -288,7 +288,7 @@ export default function OnboardingPlan({ session, userProfile, instanceId, onBac
 
         {!hasSubtasks && isNoteExpanded && (
           <div style={{ padding: '10px 6px 14px 34px', borderBottom: `1px solid ${T.borderSubtle}` }}>
-            <label htmlFor={`note-${task.id}`} style={{ display: 'block', fontSize: '11px', color: T.muted, marginBottom: '6px', fontWeight: 500 }}>Note</label>
+            <label htmlFor={`note-${task.id}`} style={{ display: 'block', fontSize: 'var(--text-xs)', color: T.muted, marginBottom: '6px', fontWeight: 500 }}>Note</label>
             <textarea
               id={`note-${task.id}`}
               className="il-input"
@@ -300,7 +300,7 @@ export default function OnboardingPlan({ session, userProfile, instanceId, onBac
               placeholder="Add a note about this task…"
               autoFocus
             />
-            <div aria-live="polite" style={{ fontSize: '11px', marginTop: '6px', color: noteSaveState[task.id] === 'saved' ? T.success : T.subtle }}>
+            <div aria-live="polite" style={{ fontSize: 'var(--text-xs)', marginTop: '6px', color: noteSaveState[task.id] === 'saved' ? T.success : T.subtle }}>
               {noteSaveState[task.id] === 'saving' ? 'Saving…' : noteSaveState[task.id] === 'saved' ? '✓ Saved' : 'Saves automatically.'}
             </div>
           </div>
@@ -337,12 +337,12 @@ export default function OnboardingPlan({ session, userProfile, instanceId, onBac
         }}
       >
         <div style={S.bucketHeader}>
-          <span style={{ fontSize: '12px', fontWeight: 600, color: complete ? T.success : T.text }}>{bucket}</span>
-          {dateHint && <span style={{ fontSize: '11px', color: T.subtle }}>{dateHint}</span>}
-          {allTasks.length === 0 && <span style={{ fontSize: '11px', color: T.subtle, fontStyle: 'italic' }}>{draggingId ? 'Drop here' : 'No tasks'}</span>}
+          <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: complete ? T.success : T.text }}>{bucket}</span>
+          {dateHint && <span style={{ fontSize: 'var(--text-xs)', color: T.subtle }}>{dateHint}</span>}
+          {allTasks.length === 0 && <span style={{ fontSize: 'var(--text-xs)', color: T.subtle, fontStyle: 'italic' }}>{draggingId ? 'Drop here' : 'No tasks'}</span>}
           <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
             {allTasks.length > 0 && (
-              <span className="il-tabular" style={{ fontSize: '11px', color: complete ? T.success : T.subtle, fontWeight: complete ? 600 : 400 }}>
+              <span className="il-tabular" style={{ fontSize: 'var(--text-xs)', color: complete ? T.success : T.subtle, fontWeight: complete ? 600 : 400 }}>
                 {complete ? '✓ Done' : `${doneHere}/${allTasks.length}`}
               </span>
             )}
@@ -392,7 +392,7 @@ export default function OnboardingPlan({ session, userProfile, instanceId, onBac
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '4px' }}>
         <h2 id="schedule-heading" style={{ ...T.type.h2, margin: 0, color: T.text }}>Schedule</h2>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          {canDrag && <span style={{ fontSize: '11px', color: T.subtle }}>Drag ⠿ to reschedule</span>}
+          {canDrag && <span style={{ fontSize: 'var(--text-xs)', color: T.subtle }}>Drag ⠿ to reschedule</span>}
           <Segmented size="sm" label="Show tasks" value={view} onChange={setView}
             options={[{ value: 'all', label: 'All' }, { value: 'remaining', label: `Remaining (${total - done})` }]} />
         </div>
@@ -445,7 +445,7 @@ export default function OnboardingPlan({ session, userProfile, instanceId, onBac
       </div>
 
       {visibleDocs.length === 0 && hiddenDocs.length === 0 && (
-        <div style={{ fontSize: '13px', color: T.subtle, padding: '8px 0' }}>No documents in the library yet.</div>
+        <div style={{ fontSize: 'var(--text-base)', color: T.subtle, padding: '8px 0' }}>No documents in the library yet.</div>
       )}
 
       {visibleDocs.map(doc => {
@@ -457,8 +457,8 @@ export default function OnboardingPlan({ session, userProfile, instanceId, onBac
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <CheckCircle size={16} checked={received} label={`${doc.name}: ${received ? 'received' : 'not received'}`}
                 onToggle={canEdit ? e => toggleDocument(doc.id, e) : undefined} />
-              <span style={{ flex: 1, minWidth: 0, fontSize: '13px', color: received ? T.muted : T.text, overflowWrap: 'anywhere' }}>{doc.name}</span>
-              <a href={doc.file_url} target="_blank" rel="noreferrer" className="il-btn-link" style={{ fontSize: '12px', color: T.brand, textDecoration: 'none', flexShrink: 0 }}>View</a>
+              <span style={{ flex: 1, minWidth: 0, fontSize: 'var(--text-base)', color: received ? T.muted : T.text, overflowWrap: 'anywhere' }}>{doc.name}</span>
+              <a href={doc.file_url} target="_blank" rel="noreferrer" className="il-btn-link" style={{ fontSize: 'var(--text-sm)', color: T.brand, textDecoration: 'none', flexShrink: 0 }}>View</a>
               {canEdit && (
                 <span className="il-row-actions">
                   <Button variant="link" size="sm" style={{ color: T.subtle }} onClick={() => hideDocument(doc.id)} aria-label={`Hide ${doc.name} for this employee`}>Hide</Button>
@@ -466,7 +466,7 @@ export default function OnboardingPlan({ session, userProfile, instanceId, onBac
               )}
             </div>
             {completedFileUrl && (
-              <div style={{ paddingLeft: '26px', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+              <div style={{ paddingLeft: '26px', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: 'var(--text-sm)' }}>
                 <span style={{ color: T.success }}>✓ Employee uploaded</span>
                 <a href={completedFileUrl} target="_blank" rel="noreferrer" className="il-btn-link" style={{ color: T.brand, textDecoration: 'none' }}>Download</a>
               </div>
@@ -482,7 +482,7 @@ export default function OnboardingPlan({ session, userProfile, instanceId, onBac
           </Button>
           {showHiddenDocs && hiddenDocs.map(doc => (
             <div key={doc.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0', borderBottom: `1px solid ${T.borderSubtle}` }}>
-              <div style={{ flex: 1, fontSize: '13px', color: T.subtle, textDecoration: 'line-through' }}>{doc.name}</div>
+              <div style={{ flex: 1, fontSize: 'var(--text-base)', color: T.subtle, textDecoration: 'line-through' }}>{doc.name}</div>
               {canEdit && <Button variant="link" size="sm" onClick={() => restoreDocument(doc.id)}>Restore</Button>}
             </div>
           ))}
@@ -514,10 +514,10 @@ export default function OnboardingPlan({ session, userProfile, instanceId, onBac
       >
         <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
           <div role="progressbar" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100} aria-label="Onboarding progress"
-            style={{ flex: '1 1 200px', maxWidth: '360px', height: '6px', background: T.borderSubtle, borderRadius: '99px', overflow: 'hidden' }}>
-            <div className="il-progress-fill" style={{ height: '100%', width: `${percent}%`, borderRadius: '99px', background: percent === 100 ? T.success : `linear-gradient(90deg, ${T.brand}, ${T.brandMid})` }} />
+            style={{ flex: '1 1 200px', maxWidth: '360px', height: '4px', background: T.border, borderRadius: '999px', overflow: 'hidden' }}>
+            <div className="il-progress-fill" style={{ height: '100%', width: `${percent}%`, borderRadius: '999px', background: percent === 100 ? T.success : T.brand }} />
           </div>
-          <span className="il-tabular" style={{ fontSize: '12px', color: T.muted }}>
+          <span className="il-tabular" style={{ fontSize: 'var(--text-sm)', color: T.muted }}>
             <strong style={{ color: percent === 100 ? T.success : T.text, fontWeight: 600 }}>{percent}%</strong> · {done} of {total} tasks
           </span>
         </div>

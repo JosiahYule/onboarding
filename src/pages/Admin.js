@@ -32,11 +32,11 @@ function sortTemplates(a, b) {
 
 const BASE_STYLES = {
   row: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid var(--border-subtle)' },
-  rowName: { fontSize: '13px', color: T.text },
-  rowMuted: { fontSize: '12px', color: T.subtle },
-  phaseLabel: { fontSize: '11px', fontWeight: 600, color: T.subtle, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px', marginTop: '24px' },
-  pill: { fontSize: '11px', padding: '2px 8px', borderRadius: '5px', background: 'var(--hover-bg)', color: T.muted, fontWeight: 500 },
-  dragHandle: { color: T.subtle, fontSize: '13px', lineHeight: 1, flexShrink: 0, userSelect: 'none', padding: '4px', margin: '-4px 2px -4px -4px' },
+  rowName: { fontSize: 'var(--text-base)', color: T.text },
+  rowMuted: { fontSize: 'var(--text-sm)', color: T.subtle },
+  phaseLabel: { fontSize: 'var(--text-xs)', fontWeight: 600, color: T.subtle, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px', marginTop: '24px' },
+  pill: { fontSize: 'var(--text-xs)', padding: '2px 8px', borderRadius: 'var(--radius-md)', background: 'var(--hover-bg)', color: T.muted, fontWeight: 500 },
+  dragHandle: { color: T.subtle, fontSize: 'var(--text-base)', lineHeight: 1, flexShrink: 0, userSelect: 'none', padding: '4px', margin: '-4px 2px -4px -4px' },
 }
 
 
@@ -679,7 +679,7 @@ async function handleAdminDocumentUpload(e) {
       <Layout session={session} userProfile={userProfile} currentPage="active" onNavigate={onNavigate}>
         <PageHeader title="Start a new onboarding" subtitle="Choose the agency and role. Their plan is built from that role’s task template." />
         <div style={{ ...contentStyle, maxWidth: '720px' }}>
-          <div id="agency-label" style={{ fontSize: '13px', fontWeight: 600, color: T.text, marginBottom: '10px' }}>1. Agency</div>
+          <div id="agency-label" style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: T.text, marginBottom: '10px' }}>1. Agency</div>
           <div role="radiogroup" aria-labelledby="agency-label" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '10px', marginBottom: '28px' }}>
             {BRANDS.map(b => {
               const active = pickedBrand === b.code
@@ -694,8 +694,8 @@ async function handleAdminDocumentUpload(e) {
                     border: `1.5px solid ${active ? T.brand : T.border}`,
                     boxShadow: active ? 'none' : T.shadowSm,
                   }}>
-                  <div style={{ fontSize: '14px', fontWeight: 600, color: active ? T.brand : T.text }}>{b.name}</div>
-                  <div style={{ fontSize: '12px', color: T.muted, marginTop: '3px' }}>
+                  <div style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: active ? T.brand : T.text }}>{b.name}</div>
+                  <div style={{ fontSize: 'var(--text-sm)', color: T.muted, marginTop: '3px' }}>
                     {loaded.roles ? `${count} role${count === 1 ? '' : 's'}` : 'Loading…'}
                   </div>
                 </button>
@@ -705,9 +705,9 @@ async function handleAdminDocumentUpload(e) {
 
           {pickedBrand && (
             <div className="il-tab-content">
-              <div style={{ fontSize: '13px', fontWeight: 600, color: T.text, marginBottom: '10px' }}>2. Role</div>
+              <div style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: T.text, marginBottom: '10px' }}>2. Role</div>
               {brandRoles.length === 0 ? (
-                <div style={{ ...card, padding: '16px 18px', fontSize: '13px', color: T.muted, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                <div style={{ ...card, padding: '16px 18px', fontSize: 'var(--text-base)', color: T.muted, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
                   No roles exist for {brandName(pickedBrand)} yet.
                   <Button size="sm" variant="secondary" onClick={() => onNavigate('roles')}>Add a role</Button>
                 </div>
@@ -848,7 +848,7 @@ async function handleAdminDocumentUpload(e) {
               if (brandRoles.length === 0) return null
               return (
                 <div key={brand.code}>
-                  <div style={{ fontSize: '10px', fontWeight: 600, color: T.subtle, textTransform: 'uppercase', letterSpacing: '0.4px', padding: '12px 16px 4px' }}>{brand.name}</div>
+                  <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: T.subtle, textTransform: 'uppercase', letterSpacing: '0.4px', padding: '12px 16px 4px' }}>{brand.name}</div>
                   {brandRoles.map(r => {
                     const active = selectedRole?.id === r.id
                     return (
@@ -856,8 +856,8 @@ async function handleAdminDocumentUpload(e) {
                         className={`il-role-item${active ? ' il-active' : ''}`}
                         onClick={() => { setSelectedRole(r); setAddingTaskToPhase(null); setBulkMode(false) }}
                         style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 16px', border: 'none', borderLeft: `2px solid ${active ? T.brand : 'transparent'}`, background: active ? T.hoverBg : 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}>
-                        <div style={{ fontSize: '13px', fontWeight: active ? 600 : 400, color: T.text, letterSpacing: '-0.1px' }}>{r.name}</div>
-                        <div style={{ fontSize: '11px', color: T.subtle, marginTop: '1px' }}>{templateCounts[r.id] || 0} tasks</div>
+                        <div style={{ fontSize: 'var(--text-base)', fontWeight: active ? 600 : 400, color: T.text, letterSpacing: '-0.1px' }}>{r.name}</div>
+                        <div style={{ fontSize: 'var(--text-xs)', color: T.subtle, marginTop: '1px' }}>{templateCounts[r.id] || 0} tasks</div>
                       </button>
                     )
                   })}
@@ -865,7 +865,7 @@ async function handleAdminDocumentUpload(e) {
               )
             })}
             {loaded.roles && roles.length === 0 && (
-              <div style={{ padding: '16px', fontSize: '12px', color: T.subtle }}>
+              <div style={{ padding: '16px', fontSize: 'var(--text-sm)', color: T.subtle }}>
                 No roles yet. <Button variant="link" size="sm" onClick={() => onNavigate('roles')}>Add roles</Button>
               </div>
             )}
@@ -879,8 +879,8 @@ async function handleAdminDocumentUpload(e) {
               <>
                 <div style={{ padding: isMobile ? '14px 16px' : '18px 32px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', borderBottom: `1px solid ${T.borderSubtle}`, flexWrap: 'wrap' }}>
                   <div style={{ minWidth: 0 }}>
-                    <h2 style={{ ...T.type.h2, fontSize: '15px', margin: 0, color: T.text }}>{selectedRole.name}</h2>
-                    <div style={{ fontSize: '12px', color: T.subtle, marginTop: '2px' }}>{brandName(selectedRole.brand)} · {templateCounts[selectedRole.id] || 0} tasks</div>
+                    <h2 style={{ ...T.type.h2, fontSize: 'var(--text-md)', margin: 0, color: T.text }}>{selectedRole.name}</h2>
+                    <div style={{ fontSize: 'var(--text-sm)', color: T.subtle, marginTop: '2px' }}>{brandName(selectedRole.brand)} · {templateCounts[selectedRole.id] || 0} tasks</div>
                   </div>
                   <Button size="sm" variant={bulkMode ? 'ghost' : 'secondary'} onClick={() => { setBulkMode(v => !v); setAddingTaskToPhase(null) }}>
                     {bulkMode ? 'Cancel bulk add' : 'Bulk add'}
@@ -895,15 +895,15 @@ async function handleAdminDocumentUpload(e) {
                   </datalist>
 
                   {!bulkMode && !isMobile && templates.some(t => !t.parent_id) && (
-                    <div style={{ fontSize: '12px', color: T.muted, marginBottom: '8px', lineHeight: 1.5 }}>
+                    <div style={{ fontSize: 'var(--text-sm)', color: T.muted, marginBottom: '8px', lineHeight: 1.5 }}>
                       Drag <span aria-hidden="true">⠿</span> to reorder tasks, move them to another day, or reorder subtasks. This order is the default for every new {selectedRole.name}.
                     </div>
                   )}
 
                   {bulkMode && (
                     <form onSubmit={e => { e.preventDefault(); addBulkTasks() }} className="il-tab-content" style={{ ...card, padding: '16px', marginBottom: '24px' }}>
-                      <label htmlFor="bulk-tasks" style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: T.text }}>Bulk add tasks</label>
-                      <div style={{ fontSize: '12px', color: T.muted, margin: '2px 0 10px' }}>One task per line. They’re added to the day and owner you pick below.</div>
+                      <label htmlFor="bulk-tasks" style={{ display: 'block', fontSize: 'var(--text-base)', fontWeight: 600, color: T.text }}>Bulk add tasks</label>
+                      <div style={{ fontSize: 'var(--text-sm)', color: T.muted, margin: '2px 0 10px' }}>One task per line. They’re added to the day and owner you pick below.</div>
                       <textarea id="bulk-tasks" className="il-input" autoFocus style={{ height: '120px' }}
                         placeholder={'Complete tax forms\nSet up laptop\nMeet with manager'}
                         value={bulkText} onChange={e => setBulkText(e.target.value)} />
@@ -925,7 +925,7 @@ async function handleAdminDocumentUpload(e) {
                     const showHeading = section.buckets.length > 1 || section.label !== section.buckets[0]
                     return (
                       <div key={section.label}>
-                        {showHeading && <h3 style={{ fontSize: '11px', fontWeight: 700, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.6px', margin: '22px 0 6px' }}>{section.label}</h3>}
+                        {showHeading && <h3 style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.6px', margin: '22px 0 6px' }}>{section.label}</h3>}
                         {section.buckets.map(phase => {
                           const phaseTasks = templates.filter(t => t.phase === phase && !t.parent_id).sort(sortTemplates)
                           const isAddingToThis = addingTaskToPhase === phase
@@ -943,10 +943,10 @@ async function handleAdminDocumentUpload(e) {
                                 transition: 'background 0.12s',
                               }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minHeight: '32px', borderBottom: `1px solid ${T.borderSubtle}` }}>
-                                <span style={{ fontSize: '12px', fontWeight: 600, color: T.text }}>{phase}</span>
+                                <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: T.text }}>{phase}</span>
                                 {phaseTasks.length > 0
-                                  ? <span className="il-tabular" style={{ fontSize: '11px', color: T.subtle }}>{phaseTasks.length}</span>
-                                  : !isAddingToThis && <span style={{ fontSize: '11px', color: T.subtle, fontStyle: 'italic' }}>{draggingTaskId ? 'Drop here' : 'No tasks'}</span>}
+                                  ? <span className="il-tabular" style={{ fontSize: 'var(--text-xs)', color: T.subtle }}>{phaseTasks.length}</span>
+                                  : !isAddingToThis && <span style={{ fontSize: 'var(--text-xs)', color: T.subtle, fontStyle: 'italic' }}>{draggingTaskId ? 'Drop here' : 'No tasks'}</span>}
                                 {!bulkMode && !isAddingToThis && (
                                   <Button variant="link" size="sm" style={{ marginLeft: 'auto' }} aria-label={`Add a task to ${phase}`}
                                     onClick={() => { setAddingTaskToPhase(phase); setNewTaskName(''); setNewTaskOwner('HR') }}>
@@ -1023,7 +1023,7 @@ async function handleAdminDocumentUpload(e) {
                                               <>
                                                 {!isMobile && <span className="il-drag-handle" style={BASE_STYLES.dragHandle} title="Drag to reorder" aria-hidden="true">⠿</span>}
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
-                                                  <span aria-hidden="true" style={{ color: T.subtle, fontSize: '12px' }}>↳</span>
+                                                  <span aria-hidden="true" style={{ color: T.subtle, fontSize: 'var(--text-sm)' }}>↳</span>
                                                   <span style={{ ...BASE_STYLES.rowName, color: T.muted }}>{s.task_name}</span>
                                                 </div>
                                                 <div className="il-row-actions" style={{ display: 'flex', gap: '2px', alignItems: 'center', flexShrink: 0 }}>
@@ -1098,18 +1098,18 @@ async function handleAdminDocumentUpload(e) {
               onClick={e => e.stopPropagation()}>
               <div style={{ padding: '20px 24px', borderBottom: `1px solid ${T.borderSubtle}`, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
                 <div>
-                  <h2 id="task-library-title" style={{ ...T.type.h2, fontSize: '15px', margin: 0, color: T.text }}>Task library</h2>
-                  <div style={{ fontSize: '12px', color: T.muted, marginTop: '4px', lineHeight: 1.5 }}>Saved task names that are suggested when you add tasks to a role. Remove typos or outdated entries.</div>
+                  <h2 id="task-library-title" style={{ ...T.type.h2, fontSize: 'var(--text-md)', margin: 0, color: T.text }}>Task library</h2>
+                  <div style={{ fontSize: 'var(--text-sm)', color: T.muted, marginTop: '4px', lineHeight: 1.5 }}>Saved task names that are suggested when you add tasks to a role. Remove typos or outdated entries.</div>
                 </div>
                 <button type="button" onClick={() => setLibraryOpen(false)} aria-label="Close task library" autoFocus className="il-btn-ghost"
-                  style={{ background: 'none', border: 'none', fontSize: '22px', lineHeight: 1, color: T.subtle, cursor: 'pointer', fontFamily: 'inherit', padding: '0 4px', borderRadius: T.radiusSm }}>×</button>
+                  style={{ background: 'none', border: 'none', fontSize: 'var(--text-xl)', lineHeight: 1, color: T.subtle, cursor: 'pointer', fontFamily: 'inherit', padding: '0 4px', borderRadius: T.radiusSm }}>×</button>
               </div>
               <div style={{ flex: 1, overflowY: 'auto', padding: '8px 24px 24px' }}>
                 {taskLibrary.length === 0 ? (
                   <EmptyState compact icon={EmptyIcons.list} title="Library is empty" message="Tasks you add to a role are saved here automatically." />
                 ) : taskLibrary.map(t => (
                   <div key={t.id} className="il-task-row" style={{ ...BASE_STYLES.row, padding: '10px 0' }}>
-                    <span style={{ fontSize: '13px', color: T.text }}>{t.task_name}</span>
+                    <span style={{ fontSize: 'var(--text-base)', color: T.text }}>{t.task_name}</span>
                     <Button variant="ghost" size="xs" style={{ color: T.danger }} onClick={() => deleteLibraryTask(t.id)} aria-label={`Remove ${t.task_name} from the library`}>Remove</Button>
                   </div>
                 ))}
@@ -1130,8 +1130,8 @@ async function handleAdminDocumentUpload(e) {
         {renderAdminHeader('Documents', 'Forms and documents new hires need to review, sign or return.')}
         <div style={contentStyle}>
           <div style={{ ...card, padding: '16px 18px', marginBottom: '8px' }}>
-            <div style={{ fontSize: '13px', fontWeight: 600, color: T.text, marginBottom: '4px' }}>Upload a document</div>
-            <div style={{ fontSize: '12px', color: T.muted, marginBottom: '12px' }}>Choose who it’s for, then pick a PDF or Word file.</div>
+            <div style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: T.text, marginBottom: '4px' }}>Upload a document</div>
+            <div style={{ fontSize: 'var(--text-sm)', color: T.muted, marginBottom: '12px' }}>Choose who it’s for, then pick a PDF or Word file.</div>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
               <select className="il-input" aria-label="Who this document is for" style={{ flex: '1 1 220px', width: 'auto', maxWidth: '320px' }} value={uploadDocRole} onChange={e => setUploadDocRole(e.target.value)}>
                 <option value="">Every employee</option>
@@ -1162,7 +1162,7 @@ async function handleAdminDocumentUpload(e) {
                         <div style={BASE_STYLES.rowMuted}>Added {formatDate(doc.uploaded_at, { month: 'short', day: 'numeric', year: 'numeric' })}</div>
                       </div>
                       <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexShrink: 0 }}>
-                        <a href={doc.file_url} target="_blank" rel="noreferrer" className="il-btn-link" style={{ fontSize: '12px', color: T.brand, textDecoration: 'none', padding: '4px 8px' }}>View</a>
+                        <a href={doc.file_url} target="_blank" rel="noreferrer" className="il-btn-link" style={{ fontSize: 'var(--text-sm)', color: T.brand, textDecoration: 'none', padding: '4px 8px' }}>View</a>
                         <span className="il-row-actions"><Button variant="ghost" size="xs" style={{ color: T.danger }} onClick={() => deleteDoc(doc, false)} aria-label={`Remove ${doc.name}`}>Remove</Button></span>
                       </div>
                     </div>
@@ -1208,7 +1208,7 @@ async function handleAdminDocumentUpload(e) {
                 </div>
                 {renamingDocId !== doc.id && (
                   <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexShrink: 0 }}>
-                    <a href={doc.file_url} target="_blank" rel="noreferrer" className="il-btn-link" style={{ fontSize: '12px', color: T.brand, textDecoration: 'none', padding: '4px 8px' }}>View</a>
+                    <a href={doc.file_url} target="_blank" rel="noreferrer" className="il-btn-link" style={{ fontSize: 'var(--text-sm)', color: T.brand, textDecoration: 'none', padding: '4px 8px' }}>View</a>
                     <span className="il-row-actions" style={{ display: 'flex', gap: '2px' }}>
                       <Button variant="ghost" size="xs" onClick={() => { setRenamingDocId(doc.id); setRenameValue(doc.name) }} aria-label={`Rename ${doc.name}`}>Rename</Button>
                       <Button variant="ghost" size="xs" style={{ color: T.danger }} onClick={() => deleteDoc(doc, true)} aria-label={`Remove ${doc.name}`}>Remove</Button>

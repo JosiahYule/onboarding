@@ -54,20 +54,24 @@ const ROLE_HINTS = {
 
 const s = {
   card: { background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radiusLg, boxShadow: T.shadowSm },
-  th: { fontSize: '11px', fontWeight: 600, color: T.subtle, textTransform: 'uppercase', letterSpacing: '0.5px', padding: '10px 12px', textAlign: 'left', borderBottom: `1px solid ${T.border}`, background: T.surfaceSunken, whiteSpace: 'nowrap' },
-  td: { fontSize: '13px', color: T.text, padding: '12px', borderBottom: `1px solid ${T.borderSubtle}`, verticalAlign: 'middle' },
+  th: { fontSize: 'var(--text-xs)', fontWeight: 600, color: T.subtle, textTransform: 'uppercase', letterSpacing: '0.5px', padding: '10px 12px', textAlign: 'left', borderBottom: `1px solid ${T.border}`, background: T.surfaceSunken, whiteSpace: 'nowrap' },
+  td: { fontSize: 'var(--text-base)', color: T.text, padding: '12px', borderBottom: `1px solid ${T.borderSubtle}`, verticalAlign: 'middle' },
   statusDot: (active) => ({ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: active ? T.success : T.subtle, flexShrink: 0 }),
   badge: (role) => {
+    // ClientLaunch's .tag. Green and amber mean done and waiting everywhere in
+    // the shared design system, so they are not spent on access levels: the
+    // two that can change other people's access take the brand tint, the rest
+    // are a plain bordered label.
     const colors = {
-      super_admin: { bg: 'color-mix(in srgb, #7c5cff 18%, var(--surface))', color: 'color-mix(in srgb, #7c5cff 75%, var(--text))' },
-      admin: { bg: T.brandLight, color: T.brand },
-      manager: { bg: T.successBg, color: T.success },
-      employee: { bg: T.hoverBg, color: T.muted },
+      super_admin: { bg: T.brandTint, color: T.brandStrong, border: 'transparent' },
+      admin: { bg: T.brandLight, color: T.brandStrong, border: 'transparent' },
+      manager: { bg: T.surface, color: T.muted, border: T.border },
+      employee: { bg: T.surface, color: T.subtle, border: T.border },
     }
     const c = colors[role] || colors.employee
-    return { fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '99px', background: c.bg, color: c.color, whiteSpace: 'nowrap' }
+    return { fontSize: 'var(--text-xs)', fontWeight: 600, padding: '1px 6px', borderRadius: 'var(--radius-sm)', border: `1px solid ${c.border}`, background: c.bg, color: c.color, letterSpacing: '0.04em', textTransform: 'uppercase', whiteSpace: 'nowrap' }
   },
-  muted: { fontSize: '12px', color: T.muted },
+  muted: { fontSize: 'var(--text-sm)', color: T.muted },
 }
 
 const TAB_ITEMS = [
@@ -224,7 +228,7 @@ function UsersTab({ isMobile, currentUserId }) {
     if (u.role === ROLE.SUPER_ADMIN || !u.role || u.role === 'none') return <span style={s.badge(u.role)}>{roleLabel(u.role)}</span>
     return (
       <select className="il-input" aria-label={`Access level for ${u.email}`} disabled={isSelf}
-        style={{ width: 'auto', padding: '5px 8px', fontSize: '12px' }}
+        style={{ width: 'auto', padding: '5px 8px', fontSize: 'var(--text-sm)' }}
         value={u.role} onChange={e => requestRoleChange(u, e.target.value)}>
         {CHANGEABLE_ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
       </select>
@@ -241,7 +245,7 @@ function UsersTab({ isMobile, currentUserId }) {
   }
 
   const status = (u) => (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: u.deactivated ? T.muted : T.success, fontWeight: 500 }}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: 'var(--text-sm)', color: u.deactivated ? T.muted : T.success, fontWeight: 500 }}>
       <span style={s.statusDot(!u.deactivated)} aria-hidden="true" />{u.deactivated ? 'Deactivated' : 'Active'}
     </span>
   )
@@ -258,9 +262,9 @@ function UsersTab({ isMobile, currentUserId }) {
           style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '14px 18px', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', color: T.text }}
         >
           <span style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', textAlign: 'left' }}>
-            <span style={{ fontSize: '13px', fontWeight: 600 }}>Invite someone</span>
+            <span style={{ fontSize: 'var(--text-base)', fontWeight: 600 }}>Invite someone</span>
             {unlinkedEmployees.length > 0 && (
-              <span style={{ fontSize: '11px', fontWeight: 600, background: T.brandLight, color: T.brand, padding: '2px 8px', borderRadius: '99px' }}>
+              <span style={{ fontSize: 'var(--text-xs)', fontWeight: 600, background: T.brandLight, color: T.brand, padding: '1px 7px', borderRadius: 'var(--radius-sm)' }}>
                 {unlinkedEmployees.length} employee{unlinkedEmployees.length !== 1 ? 's' : ''} without a login
               </span>
             )}
@@ -281,17 +285,17 @@ function UsersTab({ isMobile, currentUserId }) {
 
             {inviteMode === 'employees' && (
               unlinkedEmployees.length === 0 ? (
-                <div style={{ fontSize: '13px', color: T.subtle, padding: '4px 0' }}>Every employee already has a login.</div>
+                <div style={{ fontSize: 'var(--text-base)', color: T.subtle, padding: '4px 0' }}>Every employee already has a login.</div>
               ) : (
                 unlinkedEmployees.map(emp => (
                   <div key={emp.id} style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '10px' : '12px', padding: '10px 0', borderBottom: `1px solid ${T.borderSubtle}` }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: '13px', fontWeight: 500, color: T.text }}>{emp.full_name}</div>
+                      <div style={{ fontSize: 'var(--text-base)', fontWeight: 500, color: T.text }}>{emp.full_name}</div>
                       <div style={s.muted}>{emp.email || 'No email on file'}{emp.brand ? ` · ${brandName(emp.brand)}` : ''}</div>
                     </div>
                     {pendingInvite === emp.id ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        <select className="il-input" aria-label={`Access level for ${emp.full_name}`} style={{ width: 'auto', padding: '5px 8px', fontSize: '12px' }} value={pendingRole} onChange={e => setPendingRole(e.target.value)}>
+                        <select className="il-input" aria-label={`Access level for ${emp.full_name}`} style={{ width: 'auto', padding: '5px 8px', fontSize: 'var(--text-sm)' }} value={pendingRole} onChange={e => setPendingRole(e.target.value)}>
                           {CHANGEABLE_ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
                         </select>
                         <Button size="xs" busy={inviting} busyLabel="Sending…" onClick={() => sendInviteToEmployee(emp, pendingRole)}>Send invite</Button>
@@ -336,7 +340,7 @@ function UsersTab({ isMobile, currentUserId }) {
         <div style={{ flex: '1 1 240px', maxWidth: '320px' }}>
           <SearchInput value={query} onChange={setQuery} placeholder="Search by email, access or agency" label="Search users" />
         </div>
-        {!loading && <span aria-live="polite" style={{ fontSize: '12px', color: T.subtle, marginLeft: 'auto' }}>{visibleUsers.length} of {users.length} users</span>}
+        {!loading && <span aria-live="polite" style={{ fontSize: 'var(--text-sm)', color: T.subtle, marginLeft: 'auto' }}>{visibleUsers.length} of {users.length} users</span>}
       </div>
 
       {loading ? (
@@ -350,14 +354,14 @@ function UsersTab({ isMobile, currentUserId }) {
           {visibleUsers.map(u => (
             <div key={u.id} style={{ ...s.card, padding: '14px', marginBottom: '10px' }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', marginBottom: '10px' }}>
-                <div style={{ fontSize: '13px', color: T.text, wordBreak: 'break-all', lineHeight: 1.4, fontWeight: 500 }}>{u.email}</div>
+                <div style={{ fontSize: 'var(--text-base)', color: T.text, wordBreak: 'break-all', lineHeight: 1.4, fontWeight: 500 }}>{u.email}</div>
                 {status(u)}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
                 {roleControl(u)}
                 {u.brand && <span style={s.muted}>{brandName(u.brand)}</span>}
               </div>
-              <div style={{ fontSize: '11px', color: T.subtle, marginBottom: statusControl(u) ? '10px' : 0 }}>
+              <div style={{ fontSize: 'var(--text-xs)', color: T.subtle, marginBottom: statusControl(u) ? '10px' : 0 }}>
                 Joined {u.created_at ? formatDate(u.created_at, { month: 'short', day: 'numeric', year: 'numeric' }) : '—'} · Last sign-in {u.last_sign_in_at ? formatDate(u.last_sign_in_at, { month: 'short', day: 'numeric', year: 'numeric' }) : 'never'}
               </div>
               {statusControl(u)}
@@ -382,7 +386,7 @@ function UsersTab({ isMobile, currentUserId }) {
                 <tr key={u.id} className="il-row">
                   <td style={s.td}>
                     <div style={{ fontWeight: 500 }}>{u.email}{u.id === currentUserId && <span style={{ ...s.muted, fontWeight: 400 }}> (you)</span>}</div>
-                    <div style={{ fontSize: '11px', color: T.subtle, marginTop: '2px' }}>Joined {u.created_at ? formatDate(u.created_at, { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</div>
+                    <div style={{ fontSize: 'var(--text-xs)', color: T.subtle, marginTop: '2px' }}>Joined {u.created_at ? formatDate(u.created_at, { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</div>
                   </td>
                   <td style={s.td}>{roleControl(u)}</td>
                   <td style={{ ...s.td, ...s.muted }}>{brandName(u.brand) || '—'}</td>
@@ -488,12 +492,12 @@ function AuditLogTab({ isMobile }) {
               const entity = describeEntity(log)
               return (
                 <li key={log.id} style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '3px' : '16px', padding: '12px 16px', borderBottom: `1px solid ${T.borderSubtle}`, alignItems: isMobile ? 'stretch' : 'baseline' }}>
-                  {!isMobile && <time dateTime={log.created_at} className="il-tabular" style={{ fontSize: '12px', color: T.subtle, whiteSpace: 'nowrap', width: '160px', flexShrink: 0 }}>{formatTime(log.created_at)}</time>}
+                  {!isMobile && <time dateTime={log.created_at} className="il-tabular" style={{ fontSize: 'var(--text-sm)', color: T.subtle, whiteSpace: 'nowrap', width: '160px', flexShrink: 0 }}>{formatTime(log.created_at)}</time>}
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: '13px', color: T.text, fontWeight: 500 }}>{ACTION_LABELS[log.action] || humanize(log.action)}</div>
-                    {entity && <div style={{ fontSize: '12px', color: T.muted, marginTop: '2px', overflowWrap: 'anywhere' }}>{entity}</div>}
+                    <div style={{ fontSize: 'var(--text-base)', color: T.text, fontWeight: 500 }}>{ACTION_LABELS[log.action] || humanize(log.action)}</div>
+                    {entity && <div style={{ fontSize: 'var(--text-sm)', color: T.muted, marginTop: '2px', overflowWrap: 'anywhere' }}>{entity}</div>}
                   </div>
-                  <div style={{ fontSize: '12px', color: T.muted, flexShrink: 0, maxWidth: isMobile ? 'none' : '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div style={{ fontSize: 'var(--text-sm)', color: T.muted, flexShrink: 0, maxWidth: isMobile ? 'none' : '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {isMobile && <>{formatTime(log.created_at)} · </>}{log.user_email || 'Unknown user'}
                   </div>
                 </li>

@@ -49,7 +49,7 @@ export default function Tabs({ items, value, onChange, label, mode = 'tabs', sty
             style={{
               display: 'inline-flex', alignItems: 'center', gap: '6px',
               padding: '10px 0', marginBottom: '-1px',
-              fontSize: '13px', fontWeight: active ? 600 : 500,
+              fontSize: 'var(--text-md)', fontWeight: active ? 600 : 400,
               color: item.disabled ? T.subtle : active ? T.text : T.muted,
               background: 'none', border: 'none',
               borderBottom: `2px solid ${active ? T.brand : 'transparent'}`,
@@ -61,8 +61,8 @@ export default function Tabs({ items, value, onChange, label, mode = 'tabs', sty
             {item.label}
             {item.badge != null && item.badge !== 0 && (
               <span style={{
-                fontSize: '10px', fontWeight: 600, lineHeight: 1, minWidth: '16px', height: '16px',
-                padding: '0 5px', borderRadius: '99px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 'var(--text-xs)', fontWeight: 600, lineHeight: 1, minWidth: '16px', height: '16px',
+                padding: '0 5px', borderRadius: 'var(--radius-sm)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                 background: item.disabled ? T.hoverBg : active ? T.brand : T.hoverBg,
                 color: item.disabled ? T.subtle : active ? T.onAccent : T.muted,
               }}>

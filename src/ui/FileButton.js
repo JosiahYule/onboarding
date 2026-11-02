@@ -5,10 +5,10 @@ import { T } from './theme'
 // label around it is what's drawn. Resets the input after each pick so the
 // same file can be chosen again.
 const LOOKS = {
-  primary: { background: T.btnPrimaryBg, color: T.btnPrimaryFg, border: '1px solid transparent', padding: '9px 16px', fontSize: '13px' },
-  secondary: { background: T.surface, color: T.text, border: `1px solid ${T.border}`, padding: '7px 12px', fontSize: '12px' },
-  soft: { background: T.brandLight, color: T.brand, border: '1px solid transparent', padding: '6px 12px', fontSize: '13px' },
-  link: { background: 'none', color: T.brand, border: 'none', padding: 0, fontSize: '12px' },
+  primary: { background: T.btnPrimaryBg, color: T.btnPrimaryFg, border: '1px solid transparent', padding: '9px 16px', fontSize: 'var(--text-base)' },
+  secondary: { background: T.surface, color: T.text, border: `1px solid ${T.border}`, padding: '7px 12px', fontSize: 'var(--text-sm)' },
+  soft: { background: T.brandLight, color: T.brand, border: '1px solid transparent', padding: '6px 12px', fontSize: 'var(--text-base)' },
+  link: { background: 'none', color: T.brand, border: 'none', padding: 0, fontSize: 'var(--text-sm)' },
 }
 
 export default function FileButton({ onFile, accept, busy = false, busyLabel = 'Uploading…', variant = 'secondary', icon = true, children, title }) {

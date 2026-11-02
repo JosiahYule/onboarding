@@ -1,15 +1,15 @@
-// Deterministically map a person's name to a stable color chip, so the same
-// person always shows the same color across the app. Palette is a set of soft
-// tints that read well on both light and dark surfaces.
+// Avatar colours. Every avatar takes the brand tint, as ClientLaunch's do.
+//
+// This used to hash each name onto one of eight hues, so the same person kept
+// the same colour. Under the shared design system colour carries state and
+// nothing else (blue: brand and "you are here"; green: done; amber: waiting on
+// ISL), and eight decorative hues down a list read as eight different states.
+// The name beside the initials already says who it is.
+//
+// The palette stays a list, and the hash stays, so a future decision to bring
+// per-person colour back is a one-line change rather than a rewrite.
 const PALETTE = [
-  { bg: '#dbeafe', fg: '#1d4ed8' }, // blue
-  { bg: '#dcfce7', fg: '#15803d' }, // green
-  { bg: '#fef3c7', fg: '#b45309' }, // amber
-  { bg: '#fce7f3', fg: '#be185d' }, // pink
-  { bg: '#ede9fe', fg: '#6d28d9' }, // violet
-  { bg: '#ccfbf1', fg: '#0f766e' }, // teal
-  { bg: '#ffe4e6', fg: '#9f1239' }, // rose
-  { bg: '#e0e7ff', fg: '#4338ca' }, // indigo
+  { bg: 'var(--brand-tint)', fg: 'var(--brand-strong)' },
 ]
 
 function hash(str) {
