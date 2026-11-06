@@ -879,7 +879,9 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
               </>
             ) : (
               <>
-                {/* Vacation balance */}
+                {/* Vacation balance. Hidden until HR sets one up, unless there's
+                    another year to switch to. */}
+                {(summary.hasBalance || yearOptions.length > 1) && (
                 <section style={styles.balCard} aria-labelledby="il-bal-title">
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
                     <h2 id="il-bal-title" style={{ margin: 0, fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--subtle)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
@@ -892,7 +894,7 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
                   </div>
                   {!summary.hasBalance ? (
                     <div style={{ fontSize: 'var(--text-base)', color: 'var(--muted)', lineHeight: 1.6 }}>
-                      Your {shownYear} vacation entitlement hasn't been set up yet. You can still send requests; HR will set it up and check them against it.
+                      No {shownYear} balance yet.
                     </div>
                   ) : (
                     <>
@@ -926,10 +928,8 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
                       )}
                     </>
                   )}
-                  <div style={{ fontSize: 'var(--text-xs)', color: T.subtle, marginTop: '12px', lineHeight: 1.5 }}>
-                    Only Personal / Vacation comes out of this balance. Other types of leave are still requested and approved here, they just don't use these days.
-                  </div>
                 </section>
+                )}
 
                 {/* Request form */}
                 <section style={styles.formCard} aria-labelledby="il-tor-title">

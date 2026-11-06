@@ -10,7 +10,6 @@ export function calcProgress(taskCompletions) {
 
 export function useDashboard(refreshKey) {
   const [onboardings, setOnboardings] = useState([])
-  const [completedCount, setCompletedCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState(null)
   const [docStats, setDocStats] = useState({})
@@ -18,7 +17,6 @@ export function useDashboard(refreshKey) {
 
   useEffect(() => {
     fetchOnboardings()
-    fetchCompleted()
     fetchOffToday()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-fetch only when refreshKey changes
   }, [refreshKey])
@@ -48,14 +46,6 @@ export function useDashboard(refreshKey) {
     setLoading(false)
   }
 
-  async function fetchCompleted() {
-    const { count, error } = await supabase
-      .from('onboarding_instances')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'completed')
-    if (!error) setCompletedCount(count || 0)
-  }
-
   async function fetchOffToday() {
     const today = getToday()
     const { data } = await supabase
@@ -81,5 +71,5 @@ export function useDashboard(refreshKey) {
     setDocStats(stats)
   }
 
-  return { onboardings, completedCount, loading, fetchError, docStats, offToday, refetch: fetchOnboardings }
+  return { onboardings, loading, fetchError, docStats, offToday, refetch: fetchOnboardings }
 }

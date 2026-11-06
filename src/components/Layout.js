@@ -84,9 +84,20 @@ const ROLE_LABELS = { employee: 'Employee', manager: 'Manager', admin: 'Admin', 
 // ClientLaunch's .t-label.
 const sectionLabel = { fontSize: 'var(--text-xs)', color: 'var(--subtle)', fontWeight: 600, letterSpacing: '0.4px', textTransform: 'uppercase' }
 
+// Every page renders its own Layout, so which sidebar sections are collapsed
+// has to live outside React state or it would reset on each navigation.
+const COLLAPSED_KEY = 'il-nav-collapsed'
+function readCollapsed() {
+  try { return JSON.parse(localStorage.getItem(COLLAPSED_KEY)) || [] } catch { return [] }
+}
+function writeCollapsed(ids) {
+  try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify(ids)) } catch { /* storage blocked: still works, just won't persist */ }
+}
+
 export default function Layout({ session, userProfile, currentPage, onNavigate, children }) {
   const { isMobile } = useWindowSize()
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(readCollapsed)
 
   useEffect(() => {
     if (!drawerOpen) return
@@ -96,6 +107,25 @@ export default function Layout({ session, userProfile, currentPage, onNavigate, 
   }, [drawerOpen])
 
   const sections = buildSections(userProfile)
+
+  // Landing on a page inside a collapsed section (from a link elsewhere in the
+  // app) opens that section, so the highlighted row is never hidden.
+  const activeSectionId = sections.find(s => s.items.some(i => isActive(i, currentPage)))?.id
+  useEffect(() => {
+    if (activeSectionId && collapsed.includes(activeSectionId)) {
+      const next = collapsed.filter(id => id !== activeSectionId)
+      setCollapsed(next)
+      writeCollapsed(next)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-check when the page changes
+  }, [activeSectionId])
+
+  function toggleSection(id) {
+    const next = collapsed.includes(id) ? collapsed.filter(x => x !== id) : [...collapsed, id]
+    setCollapsed(next)
+    writeCollapsed(next)
+  }
+
   const canManage = userProfile?.role === ROLE.ADMIN || userProfile?.role === ROLE.SUPER_ADMIN
 
   function activate(item) {
@@ -271,10 +301,26 @@ export default function Layout({ session, userProfile, currentPage, onNavigate, 
         </div>
 
         <nav aria-label="Main">
-          {sections.map(section => (
+          {sections.map(section => {
+            const open = !section.label || !collapsed.includes(section.id)
+            const listId = `il-nav-${section.id}`
+            return (
             <div key={section.id}>
-              {section.label && <div style={{ ...sectionLabel, padding: '16px 20px 6px' }}>{section.label}</div>}
-              <div style={{ display: 'flex', flexDirection: 'column', marginBottom: '2px' }}>
+              {section.label && (
+                <button
+                  className="il-nav-section"
+                  aria-expanded={open}
+                  aria-controls={listId}
+                  onClick={() => toggleSection(section.id)}
+                  style={{ ...sectionLabel, display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '16px 20px 6px', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}
+                >
+                  {section.label}
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ transition: 'transform 0.15s ease', transform: open ? 'rotate(0deg)' : 'rotate(-90deg)' }}>
+                    <path d="M2 3.5l3 3 3-3" />
+                  </svg>
+                </button>
+              )}
+              <div id={listId} hidden={!open} style={{ display: open ? 'flex' : 'none', flexDirection: 'column', marginBottom: '2px' }}>
                 {section.items.map(item => {
                   const active = isActive(item, currentPage)
                   return (
@@ -286,7 +332,8 @@ export default function Layout({ session, userProfile, currentPage, onNavigate, 
                 })}
               </div>
             </div>
-          ))}
+            )
+          })}
         </nav>
 
         {/* Identity on its own line, actions under a rule, as ClientLaunch's
