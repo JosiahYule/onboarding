@@ -56,8 +56,8 @@ export function getCurrentYear() {
 // Feature flags for surfaces that are built but not yet launched. Flipping a
 // flag to true is all it takes to enable the corresponding UI.
 export const FEATURES = {
-  employeeTimeOff: false,
-  techSupport: false,
+  employeeTimeOff: true,
+  techSupport: true,
 }
 
 export const ROUTES = {
@@ -70,6 +70,7 @@ export const ROUTES = {
   ROLES: '/roles',
   HISTORY: '/history',
   TIME_OFF: '/time-off',
+  TECH_SUPPORT: '/tech-support',
   COMPANY_RESOURCES: '/company-resources',
   SET_PASSWORD: '/set-password',
   SUPER_ADMIN_USERS: '/system/users',
@@ -99,6 +100,7 @@ export function pathToPage(pathname) {
   if (pathname === ROUTES.ROLES) return 'roles'
   if (pathname === ROUTES.HISTORY) return 'history'
   if (pathname === ROUTES.TIME_OFF) return 'time-off'
+  if (pathname === ROUTES.TECH_SUPPORT) return 'tech-support'
   if (pathname === ROUTES.SET_PASSWORD) return 'set-password'
   if (pathname === ROUTES.SUPER_ADMIN_USERS) return 'super-admin-users'
   if (pathname === ROUTES.SUPER_ADMIN_AUDIT) return 'super-admin-audit'
@@ -116,6 +118,7 @@ export function pageToPath(page) {
   if (page === 'roles') return ROUTES.ROLES
   if (page === 'history') return ROUTES.HISTORY
   if (page === 'time-off') return ROUTES.TIME_OFF
+  if (page === 'tech-support') return ROUTES.TECH_SUPPORT
   if (page === 'set-password') return ROUTES.SET_PASSWORD
   if (page === 'super-admin-users') return ROUTES.SUPER_ADMIN_USERS
   if (page === 'super-admin-audit') return ROUTES.SUPER_ADMIN_AUDIT

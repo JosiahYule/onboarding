@@ -12,13 +12,16 @@ A full-featured employee onboarding management system built for **Integrated Sta
 - Upload and manage required documents per employee and role
 - Edit employee details mid-onboarding (including role changes, which swap the task plan automatically)
 - Maintain a library of reusable task templates, company resources, and role definitions
-- Approve or deny time-off requests with a full calendar view
+- Approve or deny time-off requests, set yearly entitlements and carry-over, and see who's away on a calendar
+- Work a queue of tech support tickets from employees
 
 **For Employees**
 - A self-service portal to track their own onboarding progress
 - View and download company resources and role-specific documents
 - Upload required documents directly from the portal
 - See manager notes and feedback
+- Request time off and see their vacation balance
+- Send tech support tickets and follow their status
 
 **For Super Admins**
 - Manage all users and their access levels
@@ -89,7 +92,20 @@ If a role change is needed mid-onboarding, `swap_employee_and_tasks` handles the
 
 ### Time-Off Management
 
-Employees submit requests with a type (vacation, sick, personal, professional development, etc.) and date range. Managers and admins see all requests on a shared calendar — colour-coded per employee — and can approve, deny, or cancel with a single click.
+Employees request time off from the **Time off** tab of their portal; HR reviews it on the admin **Time off** page. The rules live in the database (see `supabase/migrations/20261106_01_time_off_launch.sql`), so the app can't drift from them:
+
+- **Only Personal / Vacation uses the yearly balance.** Bereavement, Care Day, Volunteer, PD, Work from Wherever and Other are requested, approved and shown on the calendar the same way, but don't spend days. The list is `time_off_counts_against_balance()` in the database and `BALANCE_TYPES` in `src/utils/timeOffMath.js`; change both together.
+- **Business days are counted by the database**, skipping weekends and company holidays. Requests over New Year are split by year (`year_split`), and approval deducts from each year's balance (`balance_usage`). Adding or removing a holiday recounts pending requests; approved ones keep the count they were approved with.
+- **Balances:** remaining = entitlement (`total_days`) + `carried_over` − `used_days` − pending vacation. Approvals add to used days automatically; HR can edit all three on the Balances tab (for example, to record days taken before the system went live).
+- **Who can do what:** employees can only create *pending* requests, and can cancel approved leave only before it starts. Approve, deny and cancel go through `approve_/deny_/cancel_time_off_request()`, which check the caller's role. HR can also **Log time off** for someone (a sick call, or a person without a portal login).
+- **Year end:** on the Balances tab, pick next year and use **Set up 2027 from 2026**. It copies entitlements and carries unused days over up to a limit you set. It's safe to re-run: do it in December so January can be booked, then again in early January to settle carry-over.
+- **Holidays that move** (Heritage Day, Good Friday, Natal Day, Labour Day, Thanksgiving) must be added for each year; only tick "repeats" for fixed dates.
+
+Requests email HR and the employee's own manager (found with `get_my_manager_email()`, since employees can't read other employee records). Decisions email the employee.
+
+### Tech Support
+
+Employees send tickets from the **Tech support** tab of their portal, with a category and how badly it's affecting their work. Each ticket is saved first and then emailed to the *Tech support email* in System settings, so a mail failure never loses it. Admins work the queue on the **Tech support** page (Open → In progress → Resolved); a response written there shows on the employee's ticket and is emailed to them on resolve.
 
 ### Audit Logging
 
@@ -107,7 +123,8 @@ src/
 │   ├── NewOnboarding.js    # Start a new onboarding
 │   ├── OnboardingPlan.js   # Per-employee task checklist and document tracking
 │   ├── EmployeePortal.js   # Employee self-service view
-│   ├── TimeOff.js          # Time-off requests and calendar
+│   ├── TimeOff.js          # Time-off requests, balances, calendar, holidays
+│   ├── TechSupport.js      # Admin queue for employee tech support tickets
 │   ├── SuperAdmin.js       # User management, audit log, system settings
 │   └── SetPassword.js      # Invite-based initial password setup
 ├── components/
@@ -131,6 +148,8 @@ src/
 ├── utils/
 │   ├── dates.js            # Date-only values parsed in local time (see "Dates" below)
 │   ├── auditLog.js         # Audit log writer
+│   ├── timeOffMath.js      # Balance arithmetic shared by the portal, admin page and emails
+│   ├── ticketShared.js     # Ticket categories, urgency levels and status pill
 │   ├── getHrEmail.js       # Cached system settings fetcher
 │   └── handleError.js      # Sanitizes Supabase errors for user display
 ├── App.js                  # Root component — auth, routing, role enforcement, code-split pages
