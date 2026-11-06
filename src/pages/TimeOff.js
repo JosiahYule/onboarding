@@ -8,9 +8,10 @@ import useToast from '../hooks/useToast'
 import { handleSupabaseError } from '../utils/handleError'
 import { logAudit } from '../utils/auditLog'
 import { useWindowSize } from '../hooks/useWindowSize'
-import { getToday, getCurrentYear, TIME_OFF_STATUS } from '../config'
+import { getToday, getCurrentYear, TIME_OFF_STATUS, BRANCHES, PROVINCES, branchName, branchProvince } from '../config'
 import { TYPE_LABELS, StatusPill, TypeIcon, fmtDate, fmtDateRange } from '../utils/timeOffShared'
-import { countsAgainstBalance, summarizeYear, remainingIfApproved, yearSplitOf, findOverlap, formatDays } from '../utils/timeOffMath'
+import { countsAgainstBalance, balanceBucket, BUCKETS, summarizeYear, remainingIfApproved, yearSplitOf, findOverlap, formatDays, workFromWhereverHint } from '../utils/timeOffMath'
+import { parseImportList } from '../utils/importList'
 import { escapeHtml } from '../utils/escapeHtml'
 import { sendEmail, appLink } from '../utils/emailNotify'
 import { formatDate } from '../utils/dates'
@@ -119,11 +120,41 @@ const LEGACY_TYPES = new Set(['vacation', 'sick', 'personal'])
 const LOG_TYPE_OPTIONS = Object.entries(TYPE_LABELS).filter(([k]) => !LEGACY_TYPES.has(k))
 const EMPTY_LOG = { employeeId: '', start: '', end: '', portion: 'full', type: 'personal_vacation', notes: '', approve: true }
 
-// An entitlement counts as "not set" when there's no row, or only the empty
-// row an approval creates on its own (total 0, nothing carried).
+// Allowances count as "not set" when there's no row, or only the empty row an
+// approval creates on its own (no vacation and no care days).
 function hasNoEntitlement(bal) {
-  return !bal || (Number(bal.total_days) === 0 && Number(bal.carried_over) === 0)
+  return !bal || (Number(bal.total_days) === 0 && Number(bal.care_days) === 0)
 }
+
+// The holiday table has one row per province (or one row for every branch).
+// For showing them, rows for the same day and name are merged into one, with
+// the provinces it applies to and whether it's statutory or observed in each.
+function groupHolidays(rows) {
+  const groups = new Map()
+  rows.forEach(h => {
+    const key = `${h.date}|${h.name}`
+    const g = groups.get(key) || { key, date: h.date, name: h.name, note: h.note, repeats: h.repeats_yearly, ids: [], provinces: [], kinds: {} }
+    g.ids.push(h.id)
+    if (h.province) { g.provinces.push(h.province); g.kinds[h.province] = h.kind }
+    else { g.allBranches = true; g.kind = h.kind }
+    g.note = g.note || h.note
+    groups.set(key, g)
+  })
+  return [...groups.values()].map(g => ({
+    ...g,
+    provinces: PROVINCES.map(p => p.code).filter(c => g.provinces.includes(c)),
+    everywhere: g.allBranches || PROVINCES.every(p => g.provinces.includes(p.code)),
+  })).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.name.localeCompare(b.name)))
+}
+
+// Does a holiday row fall on this YYYY-MM-DD date? Repeating holidays match
+// the same month and day in any year.
+function holidayOn(h, iso) {
+  return h.date === iso || (h.repeats_yearly && h.date.slice(5) === iso.slice(5))
+}
+
+const KIND_LABEL = { statutory: 'Statutory', observed: 'Observed', company: 'Company' }
+const ALL_PROVINCES = PROVINCES.map(p => p.code)
 
 export default function TimeOff({ session, userProfile, onNavigate }) {
   const [subView, setSubView] = useState('requests')
@@ -145,12 +176,19 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
   // Balances
   const [balYear, setBalYear] = useState(getCurrentYear())
   const [balSearch, setBalSearch] = useState('')
-  const [editing, setEditing] = useState(null) // { employeeId, total, carried, used }
+  const [editing, setEditing] = useState(null) // { employeeId, vacation, vacationUsed, care, careUsed, branch, startDate }
   const [savingBalance, setSavingBalance] = useState(false)
   const [bulkDays, setBulkDays] = useState('')
+  const [bulkCare, setBulkCare] = useState('')
   const [bulkSaving, setBulkSaving] = useState(false)
   const [startYearOpen, setStartYearOpen] = useState(false)
-  const [carryCap, setCarryCap] = useState('0')
+  // HR's yearly list
+  const [importOpen, setImportOpen] = useState(false)
+  const [importText, setImportText] = useState('')
+  const [importYear, setImportYear] = useState(getCurrentYear() + 1)
+  const [importing, setImporting] = useState(false)
+  // Calendar
+  const [calBranch, setCalBranch] = useState('')
   // Logging time off on someone's behalf
   const [logForm, setLogForm] = useState(null)
   const [logSaving, setLogSaving] = useState(false)
@@ -160,8 +198,11 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
   const [newHolidayName, setNewHolidayName] = useState('')
   const [newHolidayDate, setNewHolidayDate] = useState('')
   const [newHolidayRepeats, setNewHolidayRepeats] = useState(false)
+  const [newHolidayProvinces, setNewHolidayProvinces] = useState(ALL_PROVINCES)
   const [savingHoliday, setSavingHoliday] = useState(false)
-  const [deletingHolidayId, setDeletingHolidayId] = useState(null)
+  const [deletingHolidayKey, setDeletingHolidayKey] = useState(null)
+  const [holidayYear, setHolidayYear] = useState(getCurrentYear())
+  const [addingYear, setAddingYear] = useState(false)
   const { toast, showToast, hideToast } = useToast()
   const { isMobile } = useWindowSize()
 
@@ -175,7 +216,7 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
   async function fetchData() {
     if (subView === 'holidays') { await fetchHolidays(); return }
     setLoading(true)
-    await fetchCore()
+    await Promise.all([fetchCore(), subView === 'calendar' ? fetchHolidays() : null])
     setLoading(false)
   }
 
@@ -186,12 +227,12 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
         .from('time_off_requests')
         .select(`
           *,
-          employee:employees!time_off_requests_employee_id_fkey(id, full_name, email),
+          employee:employees!time_off_requests_employee_id_fkey(id, full_name, email, branch),
           reviewer:employees!time_off_requests_reviewed_by_fkey(id, full_name)
         `)
         .order('created_at', { ascending: false }),
       supabase.from('time_off_balances').select('*'),
-      supabase.from('employees').select('id, full_name, email').order('full_name'),
+      supabase.from('employees').select('id, full_name, email, branch, hire_date').order('full_name'),
     ])
     const err = reqRes.error || balRes.error || empRes.error
     if (err) showToast(handleSupabaseError(err, 'Failed to load time off.'), 'error')
@@ -210,28 +251,42 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
 
   async function addHoliday() {
     if (!newHolidayName.trim() || !newHolidayDate) { showToast('Name and date are required.', 'error'); return }
+    if (newHolidayProvinces.length === 0) { showToast('Choose at least one branch.', 'error'); return }
     setSavingHoliday(true)
-    const { error } = await supabase.from('company_holidays').insert({
-      name: newHolidayName.trim(),
-      date: newHolidayDate,
-      repeats_yearly: newHolidayRepeats,
-    })
+    const base = { name: newHolidayName.trim(), date: newHolidayDate, repeats_yearly: newHolidayRepeats, kind: 'company' }
+    // One row for every branch, or one per province it applies to.
+    const rows = newHolidayProvinces.length === ALL_PROVINCES.length
+      ? [{ ...base, province: null }]
+      : newHolidayProvinces.map(province => ({ ...base, province }))
+    const { error } = await supabase.from('company_holidays').insert(rows)
     if (error) { showToast(handleSupabaseError(error, 'Failed to add holiday.'), 'error'); setSavingHoliday(false); return }
     setNewHolidayName('')
     setNewHolidayDate('')
     setNewHolidayRepeats(false)
+    setNewHolidayProvinces(ALL_PROVINCES)
     showToast('Holiday added. Pending requests have been recounted.')
     setSavingHoliday(false)
     await fetchHolidays()
   }
 
-  async function deleteHoliday(id) {
-    setDeletingHolidayId(id)
-    const { error } = await supabase.from('company_holidays').delete().eq('id', id)
-    if (error) { showToast(handleSupabaseError(error, 'Failed to delete holiday.'), 'error'); setDeletingHolidayId(null); return }
+  async function deleteHoliday(group) {
+    setDeletingHolidayKey(group.key)
+    const { error } = await supabase.from('company_holidays').delete().in('id', group.ids)
+    if (error) { showToast(handleSupabaseError(error, 'Failed to delete holiday.'), 'error'); setDeletingHolidayKey(null); return }
     showToast('Holiday removed. Pending requests have been recounted.')
-    setDeletingHolidayId(null)
-    setHolidays(prev => prev.filter(h => h.id !== id))
+    setDeletingHolidayKey(null)
+    setHolidays(prev => prev.filter(h => !group.ids.includes(h.id)))
+  }
+
+  // Fills in every handbook holiday for a year, for each province.
+  async function addYearHolidays(year) {
+    setAddingYear(true)
+    const { data: count, error } = await supabase.rpc('add_province_holidays', { p_year: year })
+    setAddingYear(false)
+    if (error) { showToast(handleSupabaseError(error, `Failed to add ${year}'s holidays.`), 'error'); return }
+    logAudit('holidays_added', 'company_holidays', null, { year, added: count })
+    showToast(count > 0 ? `Added ${year}'s holidays. Pending requests have been recounted.` : `${year}'s holidays are already in the list.`)
+    await fetchHolidays()
   }
 
   // employee id -> { "2026": balanceRow, ... }
@@ -311,7 +366,8 @@ ${extra}${appLink('/', 'See it in your portal')}`
     const { error } = await supabase.rpc('cancel_time_off_request', { p_request_id: req.id })
     if (error) { showToast(handleSupabaseError(error, 'Failed to cancel.'), 'error'); return }
     logAudit('time_off_cancelled', 'time_off_request', req.id, { employee_id: req.employee_id, days: req.business_days, type: req.type, previous_status: req.status, by_hr: true })
-    const refund = countsAgainstBalance(req.type) ? `<p>${formatDays(req.business_days)} have gone back into your vacation balance.</p>` : ''
+    const bucket = balanceBucket(req.type)
+    const refund = bucket && req.status === TIME_OFF_STATUS.APPROVED ? `<p>${formatDays(req.business_days)} have gone back into your ${BUCKETS[bucket].short}.</p>` : ''
     const emailed = req.employee?.email
       ? await sendEmail({ to: req.employee.email, subject: 'Your time off has been cancelled', html: decisionEmail(req, 'cancelled by HR', '', refund) })
       : null
@@ -322,57 +378,94 @@ ${extra}${appLink('/', 'See it in your portal')}`
 
   // ── Balances ──
   async function saveBalance(row) {
-    const total = parseFloat(editing.total)
-    const carried = parseFloat(editing.carried === '' ? '0' : editing.carried)
-    const used = parseFloat(editing.used === '' ? '0' : editing.used)
-    if ([total, carried, used].some(v => isNaN(v) || v < 0)) { showToast('Enter numbers of 0 or more.', 'error'); return }
+    const num = v => parseFloat(v === '' ? '0' : v)
+    const values = {
+      total_days: num(editing.vacation), used_days: num(editing.vacationUsed),
+      care_days: num(editing.care), care_used: num(editing.careUsed),
+    }
+    if (Object.values(values).some(v => isNaN(v) || v < 0)) { showToast('Enter numbers of 0 or more.', 'error'); return }
+    const empChanges = {}
+    if ((editing.branch || null) !== (row.employee.branch || null)) empChanges.branch = editing.branch || null
+    if ((editing.startDate || null) !== (row.employee.hire_date || null)) empChanges.hire_date = editing.startDate || null
+
     setSavingBalance(true)
-    const values = { total_days: total, carried_over: carried, used_days: used }
     const { error } = row.balance
       ? await supabase.from('time_off_balances').update(values).eq('id', row.balance.id)
       : await supabase.from('time_off_balances').insert({ employee_id: row.employee.id, year: balYear, ...values })
+    const empError = !error && Object.keys(empChanges).length
+      ? (await supabase.from('employees').update(empChanges).eq('id', row.employee.id)).error
+      : null
     setSavingBalance(false)
-    if (error) { showToast(handleSupabaseError(error, 'Failed to save the balance.'), 'error'); return }
+    if (error || empError) { showToast(handleSupabaseError(error || empError, 'Failed to save.'), 'error'); await fetchCore(); return }
     logAudit('time_off_balance_updated', 'time_off_balance', row.employee.id, {
-      employee: row.employee.full_name, year: balYear, ...values,
-      previous: row.balance ? { total_days: row.balance.total_days, carried_over: row.balance.carried_over, used_days: row.balance.used_days } : null,
+      employee: row.employee.full_name, year: balYear, ...values, ...empChanges,
+      previous: row.balance ? { total_days: row.balance.total_days, used_days: row.balance.used_days, care_days: row.balance.care_days, care_used: row.balance.care_used } : null,
     })
-    showToast('Balance saved.')
+    showToast('Saved.')
     setEditing(null)
     await fetchCore()
   }
 
   async function applyBulkEntitlement() {
-    const days = parseFloat(bulkDays)
-    if (isNaN(days) || days <= 0) { showToast('Enter a number of days above 0.', 'error'); return }
+    const days = bulkDays === '' ? 0 : parseFloat(bulkDays)
+    const care = bulkCare === '' ? 0 : parseFloat(bulkCare)
+    if ([days, care].some(v => isNaN(v) || v < 0) || days + care === 0) { showToast('Enter a number of days above 0.', 'error'); return }
     const y = String(balYear)
     const targets = employees.filter(e => hasNoEntitlement(balanceIndex[e.id]?.[y]))
     if (targets.length === 0) return
     setBulkSaving(true)
-    const inserts = targets.filter(e => !balanceIndex[e.id]?.[y]).map(e => ({ employee_id: e.id, year: balYear, total_days: days, used_days: 0 }))
+    const values = { total_days: days, care_days: care }
+    const inserts = targets.filter(e => !balanceIndex[e.id]?.[y]).map(e => ({ employee_id: e.id, year: balYear, ...values, used_days: 0, care_used: 0 }))
     const updateIds = targets.filter(e => balanceIndex[e.id]?.[y]).map(e => balanceIndex[e.id][y].id)
     const results = await Promise.all([
       inserts.length ? supabase.from('time_off_balances').insert(inserts) : { error: null },
-      updateIds.length ? supabase.from('time_off_balances').update({ total_days: days }).in('id', updateIds) : { error: null },
+      updateIds.length ? supabase.from('time_off_balances').update(values).in('id', updateIds) : { error: null },
     ])
     setBulkSaving(false)
     const err = results.find(r => r.error)?.error
-    if (err) { showToast(handleSupabaseError(err, 'Failed to set entitlements.'), 'error'); await fetchCore(); return }
-    logAudit('time_off_balance_updated', 'time_off_balance', null, { bulk: true, year: balYear, total_days: days, employees: targets.length })
-    showToast(`${targets.length} ${targets.length === 1 ? 'person' : 'people'} now have ${days} days for ${balYear}.`)
+    if (err) { showToast(handleSupabaseError(err, 'Failed to set allowances.'), 'error'); await fetchCore(); return }
+    logAudit('time_off_balance_updated', 'time_off_balance', null, { bulk: true, year: balYear, ...values, employees: targets.length })
+    showToast(`${targets.length} ${targets.length === 1 ? 'person' : 'people'} now have ${days} vacation and ${care} care days for ${balYear}.`)
     setBulkDays('')
+    setBulkCare('')
     await fetchCore()
   }
 
   async function startYear() {
-    const cap = parseFloat(carryCap === '' ? '0' : carryCap)
-    if (isNaN(cap) || cap < 0) { showToast('Enter a carry-over limit of 0 or more.', 'error'); return }
-    const { data: count, error } = await supabase.rpc('start_time_off_year', { p_year: balYear, p_carry_cap: cap })
+    const { data: count, error } = await supabase.rpc('start_time_off_year', { p_year: balYear })
     if (error) { showToast(handleSupabaseError(error, `Failed to set up ${balYear}.`), 'error'); return }
-    logAudit('time_off_year_started', 'time_off_balance', null, { year: balYear, carry_over_cap: cap, balances: count })
+    logAudit('time_off_year_started', 'time_off_balance', null, { year: balYear, balances: count })
     showToast(`${balYear} set up for ${count} ${count === 1 ? 'person' : 'people'}.`)
     setStartYearOpen(false)
     await fetchCore()
+  }
+
+  // HR's yearly list: preview first, then only lines with no problems are sent.
+  const importPreview = useMemo(() => (importOpen ? parseImportList(importText, employees) : null), [importOpen, importText, employees])
+  const importReady = importPreview ? importPreview.rows.filter(r => r.employee && r.problems.length === 0) : []
+
+  async function runImport() {
+    if (importReady.length === 0) return
+    setImporting(true)
+    const rows = importReady.map(r => ({ employee_id: r.employee.id, ...r.values }))
+    const { data, error } = await supabase.rpc('import_time_off_list', { p_year: importYear, p_rows: rows })
+    setImporting(false)
+    if (error) { showToast(handleSupabaseError(error, 'The import failed, so nothing was changed.'), 'error'); return }
+    logAudit('time_off_list_imported', 'time_off_balance', null, { year: importYear, lines: rows.length, ...(data || {}) })
+    const skipped = importPreview.rows.length - importReady.length
+    showToast(`Imported ${rows.length} ${rows.length === 1 ? 'person' : 'people'} for ${importYear}.${skipped ? ` ${skipped} line${skipped === 1 ? '' : 's'} skipped.` : ''}`)
+    setImportOpen(false)
+    setImportText('')
+    setBalYear(importYear)
+    await fetchCore()
+  }
+
+  async function readImportFile(e) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    if (file.size > 1024 * 1024) { showToast('That file is too large. Save it as CSV first.', 'error'); return }
+    setImportText(await file.text())
   }
 
   // ── Logging time off for someone ──
@@ -449,7 +542,7 @@ ${extra}${appLink('/', 'See it in your portal')}`
   }
 
   const REQ_COLS = 'minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1.1fr) 56px 96px 120px 170px'
-  const BAL_COLS = 'minmax(0, 1.6fr) 84px 84px 70px 74px 90px 70px'
+  const BAL_COLS = 'minmax(0, 1.6fr) 78px 64px 70px 84px 64px 70px 64px'
 
   // Plain render helpers, not components: a component defined inside this one
   // is a new type on every render, so React would remount it each keystroke
@@ -487,6 +580,7 @@ ${extra}${appLink('/', 'See it in your portal')}`
           <span key={a.year} style={{ fontSize: after.length > 1 ? 'var(--text-sm)' : undefined }}>
             {after.length > 1 && <span style={{ color: T.subtle }}>{a.year}: </span>}
             {a.hasBalance ? remainingText(a.remaining) : <span style={{ color: T.warning, fontSize: 'var(--text-xs)' }}>No {a.year} balance</span>}
+            {a.bucket === 'care' && a.hasBalance && <span style={{ color: T.subtle, fontSize: 'var(--text-xs)' }}> care</span>}
           </span>
         ))}
       </span>
@@ -496,6 +590,8 @@ ${extra}${appLink('/', 'See it in your portal')}`
   // What the employee told us, and who decided.
   function detailsLine(req) {
     const bits = []
+    const wfw = req.status === TIME_OFF_STATUS.PENDING && workFromWhereverHint(req.type, req.start_date, req.end_date, req.day_portion || 'full')
+    if (wfw) bits.push(['Heads up', 'Not one full Monday to Friday week', true])
     if (req.flexibility) bits.push(['Flexibility', `${FLEX_LABELS[req.flexibility] || req.flexibility}${req.flexibility_note ? `: ${req.flexibility_note}` : ''}`])
     if (req.volunteering_with) bits.push(['Volunteering with', req.volunteering_with])
     if (req.notes) bits.push(['Their note', req.notes])
@@ -504,8 +600,8 @@ ${extra}${appLink('/', 'See it in your portal')}`
     if (bits.length === 0) return null
     return (
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px', fontSize: 'var(--text-sm)', color: T.muted, lineHeight: 1.45 }}>
-        {bits.map(([k, v]) => (
-          <span key={k}><span style={{ color: T.subtle }}>{k}:</span> {v}</span>
+        {bits.map(([k, v, warn]) => (
+          <span key={k} style={warn ? { color: T.warning } : undefined}><span style={{ color: warn ? T.warning : T.subtle }}>{k}:</span> {v}</span>
         ))}
       </div>
     )
@@ -596,7 +692,8 @@ ${extra}${appLink('/', 'See it in your portal')}`
       return {
         employee: emp,
         balance: bal,
-        summary: summarizeYear(bal, empReqs, balYear),
+        vac: summarizeYear(bal, empReqs, balYear, { bucket: 'vacation' }),
+        care: summarizeYear(bal, empReqs, balYear, { bucket: 'care' }),
         requests: empReqs.filter(r => Number(yearSplitOf(r)[balY]) > 0 || r.start_date.startsWith(balY)).sort((a, b) => (a.start_date < b.start_date ? 1 : -1)),
       }
     })
@@ -612,7 +709,7 @@ ${extra}${appLink('/', 'See it in your portal')}`
     <Layout session={session} userProfile={userProfile} currentPage="time-off" onNavigate={onNavigate}>
       <PageHeader
         title="Time off"
-        subtitle={isMobile ? null : 'Review requests, set yearly entitlements and see who’s away.'}
+        subtitle={isMobile ? null : 'Review requests, set yearly allowances and see who’s away.'}
         actions={<Button size="sm" variant="secondary" onClick={() => setLogForm({ ...EMPTY_LOG })}>Log time off</Button>}
         tabs={{
           mode: 'tabs', label: 'Time off views', value: subView, onChange: setSubView,
@@ -667,7 +764,7 @@ ${extra}${appLink('/', 'See it in your portal')}`
                   <div role="columnheader">Type</div>
                   <div role="columnheader">{sortHeader('business_days', 'Days')}</div>
                   <div role="columnheader">{sortHeader('status', 'Status')}</div>
-                  <div role="columnheader" title="Vacation balance left if this request is approved">Left after</div>
+                  <div role="columnheader" title="What's left of the vacation or care day allowance if this request is approved">Left after</div>
                   <div role="columnheader"><span className="il-visually-hidden">Actions</span></div>
                 </div>
                 {displayRequests.map(req => {
@@ -718,22 +815,27 @@ ${extra}${appLink('/', 'See it in your portal')}`
               <div style={{ flex: isMobile ? '1 1 100%' : '0 1 260px', minWidth: 0 }}>
                 <SearchInput value={balSearch} onChange={setBalSearch} placeholder="Find a person…" label="Find a person" />
               </div>
-              {prevYearCount > 0 && (
-                <Button size="sm" variant="secondary" style={{ marginLeft: isMobile ? 0 : 'auto' }} onClick={() => setStartYearOpen(true)}>
-                  Set up {balYear} from {balYear - 1}
-                </Button>
-              )}
+              <div style={{ display: 'flex', gap: '8px', marginLeft: isMobile ? 0 : 'auto', flexWrap: 'wrap' }}>
+                {prevYearCount > 0 && (
+                  <Button size="sm" variant="secondary" onClick={() => setStartYearOpen(true)}>Copy {balYear - 1} into {balYear}</Button>
+                )}
+                <Button size="sm" variant="secondary" onClick={() => { setImportYear(balYear); setImportOpen(true) }}>Import HR list</Button>
+              </div>
             </div>
 
             {!loading && missingCount > 0 && (
               <form onSubmit={e => { e.preventDefault(); applyBulkEntitlement() }}
                 style={{ ...s.card, padding: '12px 16px', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', background: T.surfaceSunken }}>
                 <span style={{ fontSize: 'var(--text-sm)', color: T.text }}>
-                  <strong>{missingCount}</strong> {missingCount === 1 ? 'person has' : 'people have'} no {balYear} entitlement yet. Give them all
+                  <strong>{missingCount}</strong> {missingCount === 1 ? 'person has' : 'people have'} nothing set for {balYear}. Give them all
                 </span>
-                <input className="il-input il-tabular" type="number" min="0.5" step="0.5" aria-label={`Days for everyone without a ${balYear} entitlement`}
-                  style={{ width: '80px', padding: '5px 8px' }} value={bulkDays} onChange={e => setBulkDays(e.target.value)} placeholder="days" />
-                <Button size="sm" type="submit" busy={bulkSaving} busyLabel="Saving…" disabled={!bulkDays}>Apply</Button>
+                <input className="il-input il-tabular" type="number" min="0" step="0.5" aria-label={`Personal / vacation days for everyone without a ${balYear} allowance`}
+                  style={{ width: '70px', padding: '5px 8px' }} value={bulkDays} onChange={e => setBulkDays(e.target.value)} placeholder="0" />
+                <span style={{ fontSize: 'var(--text-sm)', color: T.muted }}>vacation and</span>
+                <input className="il-input il-tabular" type="number" min="0" step="0.5" aria-label={`Care days for everyone without a ${balYear} allowance`}
+                  style={{ width: '70px', padding: '5px 8px' }} value={bulkCare} onChange={e => setBulkCare(e.target.value)} placeholder="0" />
+                <span style={{ fontSize: 'var(--text-sm)', color: T.muted }}>care days</span>
+                <Button size="sm" type="submit" busy={bulkSaving} busyLabel="Saving…" disabled={!bulkDays && !bulkCare}>Apply</Button>
               </form>
             )}
 
@@ -743,15 +845,21 @@ ${extra}${appLink('/', 'See it in your portal')}`
               <div style={{ ...s.card, overflow: 'hidden' }}>
                 {!isMobile && (
                   <div style={s.tHead(BAL_COLS)}>
-                    <div>Employee</div><div title="Yearly allowance">Entitlement</div><div title="Brought forward from last year">Carried</div>
-                    <div>Used</div><div>Pending</div><div>Remaining</div><div></div>
+                    <div>Employee</div>
+                    <div title="Personal / Vacation days for the year">Vacation</div><div>Used</div><div title="Left once pending requests are approved">Left</div>
+                    <div title="Care days for the year" style={{ borderLeft: `1px solid ${T.border}`, paddingLeft: '12px', marginLeft: '-12px' }}>Care days</div><div>Used</div><div>Left</div>
+                    <div></div>
                   </div>
                 )}
                 {balanceRows.map(row => {
-                  const { summary } = row
+                  const { vac, care } = row
                   const isEditing = editing?.employeeId === row.employee.id
                   const isExpanded = expandedEmployeeId === row.employee.id
                   const notSet = hasNoEntitlement(row.balance)
+                  const subtitle = [
+                    row.employee.branch ? branchName(row.employee.branch) : null,
+                    row.employee.hire_date ? `Started ${formatDate(row.employee.hire_date, { month: 'short', year: 'numeric' })}` : null,
+                  ].filter(Boolean).join(' · ') || row.employee.email
                   const nameButton = (
                     <button type="button" aria-expanded={isExpanded} onClick={() => setExpandedEmployeeId(isExpanded ? null : row.employee.id)}
                       style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, textAlign: 'left', background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'inherit', cursor: 'pointer' }}>
@@ -761,38 +869,57 @@ ${extra}${appLink('/', 'See it in your portal')}`
                       <Avatar name={row.employee.full_name} colorKey={row.employee.email} size={28} />
                       <span style={{ minWidth: 0 }}>
                         <span style={{ display: 'block', fontWeight: 500, color: T.text }}>{row.employee.full_name}</span>
-                        <span style={{ display: 'block', fontSize: 'var(--text-xs)', color: T.subtle, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.employee.email}</span>
+                        <span style={{ display: 'block', fontSize: 'var(--text-xs)', color: T.subtle, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{subtitle}</span>
                       </span>
                     </button>
                   )
                   const editButton = (
                     <Button size="xs" variant="secondary"
-                      onClick={() => setEditing({ employeeId: row.employee.id, total: String(summary.entitlement), carried: String(summary.carried), used: String(summary.used) })}
+                      onClick={() => setEditing({
+                        employeeId: row.employee.id,
+                        vacation: String(vac.entitlement), vacationUsed: String(vac.used),
+                        care: String(care.entitlement), careUsed: String(care.used),
+                        branch: row.employee.branch || '', startDate: row.employee.hire_date || '',
+                      })}
                       aria-label={`Edit ${row.employee.full_name}'s ${balYear} balance`}>{notSet ? 'Set' : 'Edit'}</Button>
                   )
-                  const numbers = {
-                    entitlement: notSet ? <span style={{ color: T.warning, fontSize: 'var(--text-sm)' }}>Not set</span> : <span className="il-tabular">{formatDays(summary.entitlement)}</span>,
-                    carried: <span className="il-tabular" style={{ color: summary.carried > 0 ? T.text : T.subtle }}>{summary.carried > 0 ? formatDays(summary.carried) : '–'}</span>,
-                    used: <span className="il-tabular">{formatDays(summary.used)}</span>,
-                    pending: <span className="il-tabular" style={{ color: summary.pending > 0 ? T.warning : T.subtle }}>{summary.pending > 0 ? formatDays(summary.pending) : '–'}</span>,
-                    remaining: <span className="il-tabular" style={{ fontWeight: 600, color: summary.remaining < 0 ? T.danger : T.text }}>{formatDays(summary.remaining)}</span>,
-                  }
+                  const days = (n, opts = {}) => <span className="il-tabular" style={{ color: opts.muted && !n ? T.subtle : T.text }}>{opts.muted && !n ? '–' : formatDays(n)}</span>
+                  const left = sum => notSet && !sum.pending ? <span style={{ color: T.subtle }}>–</span> : (
+                    <span style={{ display: 'inline-flex', flexDirection: 'column', lineHeight: 1.25 }}>
+                      <span className="il-tabular" style={{ fontWeight: 600, color: sum.remaining < 0 ? T.danger : T.text }}>{formatDays(sum.remaining)}</span>
+                      {sum.pending > 0 && <span className="il-tabular" style={{ fontSize: 'var(--text-xs)', color: T.warning }}>{formatDays(sum.pending)} pending</span>}
+                    </span>
+                  )
+                  const allowance = sum => notSet ? <span style={{ color: T.warning, fontSize: 'var(--text-sm)' }}>Not set</span> : days(sum.entitlement)
                   const editForm = isEditing && (
                     <form onSubmit={e => { e.preventDefault(); saveBalance(row) }}
-                      style={{ padding: isMobile ? '0 16px 14px' : '4px 16px 14px 42px', display: 'grid', gap: '10px' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr 1fr' : 'repeat(3, 120px)', gap: '10px' }}>
-                        {[['total', 'Entitlement'], ['carried', 'Carried over'], ['used', 'Used']].map(([key, label]) => (
+                      style={{ padding: isMobile ? '0 16px 14px' : '4px 16px 14px 42px', display: 'grid', gap: '12px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 130px)', gap: '10px' }}>
+                        {[['vacation', 'Personal / vacation'], ['vacationUsed', 'Vacation used'], ['care', 'Care days'], ['careUsed', 'Care days used']].map(([key, label]) => (
                           <label key={key} style={{ display: 'grid', gap: '4px', fontSize: 'var(--text-xs)', color: T.muted, fontWeight: 500 }}>
                             {label}
-                            <input className="il-input il-tabular" type="number" min="0" step="0.5" autoFocus={key === 'total'}
+                            <input className="il-input il-tabular" type="number" min="0" step="0.5" autoFocus={key === 'vacation'}
                               style={{ padding: '5px 8px' }} value={editing[key]}
                               onChange={e => setEditing(prev => ({ ...prev, [key]: e.target.value }))}
                               onKeyDown={e => { if (e.key === 'Escape') setEditing(null) }} />
                           </label>
                         ))}
                       </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : '170px 150px', gap: '10px' }}>
+                        <label style={{ display: 'grid', gap: '4px', fontSize: 'var(--text-xs)', color: T.muted, fontWeight: 500 }}>
+                          Branch
+                          <select className="il-input" style={{ padding: '5px 8px' }} value={editing.branch} onChange={e => setEditing(prev => ({ ...prev, branch: e.target.value }))}>
+                            <option value="">Not set (Halifax holidays)</option>
+                            {BRANCHES.map(b => <option key={b.code} value={b.code}>{b.name}</option>)}
+                          </select>
+                        </label>
+                        <label style={{ display: 'grid', gap: '4px', fontSize: 'var(--text-xs)', color: T.muted, fontWeight: 500 }}>
+                          Start date
+                          <input className="il-input" type="date" style={{ padding: '5px 8px' }} value={editing.startDate} onChange={e => setEditing(prev => ({ ...prev, startDate: e.target.value }))} />
+                        </label>
+                      </div>
                       <div style={{ fontSize: 'var(--text-xs)', color: T.subtle, lineHeight: 1.5, maxWidth: '560px' }}>
-                        Approvals add to Used automatically. Only change Used to record days taken before this system, or to correct a mistake.
+                        Approvals add to Used automatically. Only change Used to record days taken before this system, or to correct a mistake. Branch and start date apply to every year.
                       </div>
                       <div style={{ display: 'flex', gap: '6px' }}>
                         <Button size="xs" type="submit" busy={savingBalance} busyLabel="Saving…">Save</Button>
@@ -805,15 +932,17 @@ ${extra}${appLink('/', 'See it in your portal')}`
                     <div key={row.employee.id} style={{ borderBottom: `1px solid ${T.borderSubtle}`, background: isExpanded || isEditing ? T.surfaceSunken : 'transparent' }}>
                       {isMobile ? (
                         <div style={{ padding: '14px 16px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-                            {nameButton}
-                            <div style={{ fontSize: 'var(--text-lg)', flexShrink: 0 }}>{numbers.remaining}</div>
-                          </div>
+                          <div style={{ marginBottom: '10px' }}>{nameButton}</div>
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', fontSize: 'var(--text-sm)' }}>
-                            {[['Entitlement', numbers.entitlement], ['Carried', numbers.carried], ['Used', numbers.used], ['Pending', numbers.pending]].map(([label, value]) => (
+                            {[[BUCKETS.vacation.label, vac], [BUCKETS.care.label, care]].map(([label, sum]) => (
                               <div key={label} style={{ background: T.surfaceSunken, borderRadius: T.radiusSm, padding: '8px 10px' }}>
-                                <div style={{ color: T.muted, marginBottom: '2px' }}>{label}</div>
-                                <div style={{ fontWeight: 500, color: T.text }}>{value}</div>
+                                <div style={{ color: T.muted, marginBottom: '4px' }}>{label}</div>
+                                {notSet ? allowance(sum) : (
+                                  <div style={{ color: T.text }}>
+                                    <span style={{ fontWeight: 600 }}>{formatDays(sum.remaining)}</span> left of {formatDays(sum.entitlement)}
+                                    {sum.pending > 0 && <div style={{ fontSize: 'var(--text-xs)', color: T.warning }}>{formatDays(sum.pending)} pending</div>}
+                                  </div>
+                                )}
                               </div>
                             ))}
                           </div>
@@ -822,11 +951,12 @@ ${extra}${appLink('/', 'See it in your portal')}`
                       ) : (
                         <div style={{ ...s.tRow(BAL_COLS), borderBottom: 'none' }}>
                           <div style={{ minWidth: 0 }}>{nameButton}</div>
-                          <div>{numbers.entitlement}</div>
-                          <div>{numbers.carried}</div>
-                          <div>{numbers.used}</div>
-                          <div>{numbers.pending}</div>
-                          <div>{numbers.remaining}</div>
+                          <div>{allowance(vac)}</div>
+                          <div>{days(vac.used, { muted: true })}</div>
+                          <div>{left(vac)}</div>
+                          <div style={{ borderLeft: `1px solid ${T.borderSubtle}`, paddingLeft: '12px', marginLeft: '-12px', alignSelf: 'stretch', display: 'flex', alignItems: 'center' }}>{allowance(care)}</div>
+                          <div>{days(care.used, { muted: true })}</div>
+                          <div>{left(care)}</div>
                           <div>{!isEditing && editButton}</div>
                         </div>
                       )}
@@ -851,7 +981,7 @@ ${extra}${appLink('/', 'See it in your portal')}`
               </div>
             )}
             <p style={{ fontSize: 'var(--text-xs)', color: T.subtle, margin: '12px 2px 0', lineHeight: 1.6, maxWidth: '720px' }}>
-              Remaining = entitlement + carried over − used − pending. Only Personal / Vacation leave uses these days; other types are tracked but don't change the balance.
+              Left = allowance − used − pending. Personal / Vacation requests come out of Vacation and Care Day requests out of Care days; other types are tracked but don't change either. Unused days don't carry over.
             </p>
           </>
         )}
@@ -866,6 +996,10 @@ ${extra}${appLink('/', 'See it in your portal')}`
               </h2>
               <Button size="sm" variant="secondary" onClick={nextMonth} aria-label="Next month">›</Button>
               <Button size="sm" variant="ghost" onClick={() => { setCalYear(new Date().getFullYear()); setCalMonth(new Date().getMonth()) }}>Today</Button>
+              <select className="il-input" aria-label="Show branch" style={{ width: 'auto', padding: '5px 30px 5px 8px', fontSize: 'var(--text-sm)' }} value={calBranch} onChange={e => setCalBranch(e.target.value)}>
+                <option value="">All branches</option>
+                {BRANCHES.map(b => <option key={b.code} value={b.code}>{b.name}</option>)}
+              </select>
               {!isMobile && (
                 <div style={{ display: 'flex', gap: '14px', marginLeft: 'auto', alignItems: 'center', fontSize: 'var(--text-sm)', color: T.muted }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -874,7 +1008,9 @@ ${extra}${appLink('/', 'See it in your portal')}`
                   <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span aria-hidden="true" style={{ width: '22px', height: '12px', borderRadius: '3px', ...eventColors(avatarHue('legend'), true) }} />Pending
                   </span>
-                  <span style={{ color: T.subtle }}>One colour per person</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span aria-hidden="true" style={{ width: '12px', height: '12px', borderRadius: '3px', background: T.brandLight, border: `1px solid ${T.border}` }} />Holiday
+                  </span>
                 </div>
               )}
             </div>
@@ -893,14 +1029,22 @@ ${extra}${appLink('/', 'See it in your portal')}`
                   <div style={{ padding: '24px' }}><SkeletonLine width="100%" height="220px" /></div>
                 ) : (() => {
                   const cells = buildCalendarDays(calYear, calMonth)
+                  // People and holidays for the chosen branch. Someone with no
+                  // branch set counts as Halifax, as the day counts do.
+                  const calProvince = calBranch ? branchProvince(calBranch) : null
+                  const calRequests = calBranch ? requests.filter(r => (r.employee?.branch || 'halifax') === calBranch) : requests
+                  const calHolidays = calProvince ? holidays.filter(h => !h.province || h.province === calProvince) : holidays
+                  const holidaysOn = iso => groupHolidays(calHolidays.filter(h => holidayOn(h, iso)))
+                  const holidayLabel = g => g.everywhere || calProvince ? g.name : `${g.name} (${g.provinces.join(', ')})`
                   const weeks = []
                   for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7))
 
                   return weeks.map((week, wi) => {
                     const weekDates = week.map(day => day ? `${calYear}-${pad(calMonth + 1)}-${pad(day)}` : null)
-                    const { assignments, trackCount } = getWeekEventLayout(weekDates, requests)
+                    const { assignments, trackCount } = getWeekEventLayout(weekDates, calRequests)
                     const eventsH = trackCount * SLOT_H + (trackCount > 0 ? 8 : 6)
-                    const cellBg = (day, di) => !day || di === 0 || di === 6 ? T.surfaceSunken : T.surface
+                    const weekHolidays = weekDates.map(d => (d ? holidaysOn(d) : []))
+                    const cellBg = (day, di) => !day || di === 0 || di === 6 ? T.surfaceSunken : weekHolidays[di].length ? T.brandLight : T.surface
 
                     return (
                       <div key={wi} style={{ borderBottom: wi < weeks.length - 1 ? `1px solid ${T.border}` : 'none' }}>
@@ -908,8 +1052,14 @@ ${extra}${appLink('/', 'See it in your portal')}`
                           {week.map((day, di) => {
                             const isToday = weekDates[di] === TODAY
                             const isWeekend = di === 0 || di === 6
+                            const hols = weekHolidays[di]
+                            const holTitle = hols.map(g => `${holidayLabel(g)}${g.note ? `. ${g.note}` : ''}`).join('\n')
                             return (
-                              <div key={di} style={{ height: DATE_ROW_H, padding: '5px 8px', display: 'flex', justifyContent: 'flex-end', alignItems: 'flex-start', background: cellBg(day, di), borderRight: di < 6 ? `1px solid ${T.borderSubtle}` : 'none' }}>
+                              <div key={di} title={holTitle || undefined} style={{ height: DATE_ROW_H, padding: '5px 8px', display: 'flex', justifyContent: 'space-between', gap: '4px', alignItems: 'flex-start', background: cellBg(day, di), borderRight: di < 6 ? `1px solid ${T.borderSubtle}` : 'none', minWidth: 0 }}>
+                                <span style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: T.brandStrong, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, lineHeight: '18px' }}>
+                                  {hols.length > 0 && <span aria-hidden="true">{isMobile ? '•' : `${holidayLabel(hols[0])}${hols.length > 1 ? ` +${hols.length - 1}` : ''}`}</span>}
+                                  {hols.length > 0 && <span className="il-visually-hidden">{`, holiday: ${hols.map(holidayLabel).join(', ')}`}</span>}
+                                </span>
                                 {day && (isToday ? (
                                   <span aria-label={`${day}, today`} style={{ background: T.brand, color: T.onAccent, borderRadius: '50%', width: '20px', height: '20px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--text-xs)', fontWeight: 700 }}>
                                     {day}
@@ -971,69 +1121,122 @@ ${extra}${appLink('/', 'See it in your portal')}`
         )}
 
         {/* ── HOLIDAYS ── */}
-        {subView === 'holidays' && (
-          <div style={{ display: 'grid', gap: '16px', maxWidth: '760px' }}>
-            <form onSubmit={e => { e.preventDefault(); addHoliday() }} style={{ ...s.card, padding: '18px 20px' }}>
-              <h2 style={{ ...T.type.h2, fontSize: 'var(--text-md)', margin: '0 0 6px', color: T.text }}>Add a holiday</h2>
-              <p style={{ fontSize: 'var(--text-sm)', color: T.muted, margin: '0 0 14px', lineHeight: 1.55 }}>
-                Holidays are skipped when business days are counted. Only tick “repeats” for holidays on the same date every year (like Canada Day). Ones that move, such as Heritage Day, Good Friday, Natal Day, Labour Day and Thanksgiving, need adding for each year.
-              </p>
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) 170px', gap: '0 12px' }}>
-                <Field label="Name"><input placeholder="e.g. Natal Day" value={newHolidayName} onChange={e => setNewHolidayName(e.target.value)} /></Field>
-                <Field label="Date"><input type="date" value={newHolidayDate} onChange={e => setNewHolidayDate(e.target.value)} /></Field>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: 'var(--text-base)', color: T.muted, cursor: 'pointer' }}>
-                  <input type="checkbox" checked={newHolidayRepeats} onChange={e => setNewHolidayRepeats(e.target.checked)} style={{ width: '15px', height: '15px', cursor: 'pointer', accentColor: 'var(--brand)' }} />
-                  Repeats every year on this date
-                </label>
-                <Button type="submit" busy={savingHoliday} busyLabel="Adding…" disabled={!newHolidayName.trim() || !newHolidayDate}>Add holiday</Button>
-              </div>
-              <p style={{ fontSize: 'var(--text-xs)', color: T.subtle, margin: '12px 0 0', lineHeight: 1.5 }}>
-                Adding or removing a holiday recounts every pending request automatically. Approved requests keep the count they were approved with.
-              </p>
-            </form>
+        {subView === 'holidays' && (() => {
+          const years = [...new Set([CURRENT_YEAR, CURRENT_YEAR + 1, ...holidays.filter(h => !h.repeats_yearly).map(h => Number(h.date.slice(0, 4)))])]
+            .filter(y => y >= CURRENT_YEAR - 1).sort((x, y) => x - y)
+          // A repeating holiday is shown on its date in the chosen year.
+          const yearGroups = groupHolidays(holidays
+            .filter(h => h.repeats_yearly || h.date.startsWith(String(holidayYear)))
+            .map(h => (h.repeats_yearly ? { ...h, date: `${holidayYear}${h.date.slice(4)}` } : h)))
+          const hasHandbookYear = holidays.some(h => h.kind !== 'company' && h.date.startsWith(String(holidayYear)))
+          const HOL_COLS = 'minmax(0, 1fr) 130px minmax(0, 1.2fr) 90px'
+          const provinceChips = g => g.everywhere && !Object.keys(g.kinds).length
+            ? <span style={{ fontSize: 'var(--text-sm)', color: T.muted }}>All branches</span>
+            : (
+              <span style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                {g.provinces.map(code => (
+                  <span key={code} title={`${PROVINCES.find(p => p.code === code)?.branches}: ${KIND_LABEL[g.kinds[code]] || ''}`}
+                    style={{ fontSize: 'var(--text-xs)', fontWeight: 600, padding: '1px 6px', borderRadius: T.radiusSm, whiteSpace: 'nowrap',
+                      ...(g.kinds[code] === 'statutory' ? { background: T.brandLight, color: T.brandStrong } : { border: `1px solid ${T.border}`, color: T.muted }) }}>
+                    {code}{g.kinds[code] === 'statutory' ? ' · Stat' : g.kinds[code] === 'observed' ? ' · Obs' : ''}
+                  </span>
+                ))}
+              </span>
+            )
+          return (
+            <div style={{ display: 'grid', gap: '16px', maxWidth: '860px' }}>
+              <form onSubmit={e => { e.preventDefault(); addHoliday() }} style={{ ...s.card, padding: '18px 20px' }}>
+                <h2 style={{ ...T.type.h2, fontSize: 'var(--text-md)', margin: '0 0 6px', color: T.text }}>Add a holiday</h2>
+                <p style={{ fontSize: 'var(--text-sm)', color: T.muted, margin: '0 0 14px', lineHeight: 1.55 }}>
+                  For anything beyond the handbook list, like an extra day the office closes. Holidays are skipped when business days are counted, for the branches they apply to.
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) 170px', gap: '0 12px' }}>
+                  <Field label="Name"><input placeholder="e.g. Office closure" value={newHolidayName} onChange={e => setNewHolidayName(e.target.value)} /></Field>
+                  <Field label="Date"><input type="date" value={newHolidayDate} onChange={e => setNewHolidayDate(e.target.value)} /></Field>
+                </div>
+                <fieldset style={{ border: 'none', padding: 0, margin: '0 0 16px' }}>
+                  <legend style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: T.muted, marginBottom: '6px', padding: 0 }}>Applies to</legend>
+                  <div style={{ display: 'flex', gap: '6px 16px', flexWrap: 'wrap' }}>
+                    {PROVINCES.map(p => (
+                      <label key={p.code} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: 'var(--text-base)', color: T.text, cursor: 'pointer' }}>
+                        <input type="checkbox" checked={newHolidayProvinces.includes(p.code)} style={{ width: '15px', height: '15px', accentColor: 'var(--brand)' }}
+                          onChange={e => setNewHolidayProvinces(prev => e.target.checked ? ALL_PROVINCES.filter(c => c === p.code || prev.includes(c)) : prev.filter(c => c !== p.code))} />
+                        {p.branches} <span style={{ color: T.subtle, fontSize: 'var(--text-sm)' }}>({p.code})</span>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: 'var(--text-base)', color: T.muted, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={newHolidayRepeats} onChange={e => setNewHolidayRepeats(e.target.checked)} style={{ width: '15px', height: '15px', cursor: 'pointer', accentColor: 'var(--brand)' }} />
+                    Same date every year
+                  </label>
+                  <Button type="submit" busy={savingHoliday} busyLabel="Adding…" disabled={!newHolidayName.trim() || !newHolidayDate || newHolidayProvinces.length === 0}>Add holiday</Button>
+                </div>
+                <p style={{ fontSize: 'var(--text-xs)', color: T.subtle, margin: '12px 0 0', lineHeight: 1.5 }}>
+                  Adding or removing a holiday recounts every pending request automatically. Approved requests keep the count they were approved with.
+                </p>
+              </form>
 
-            <div style={{ ...s.card, overflow: 'hidden' }}>
-              {holidaysLoading ? (
-                [1, 2, 3].map(i => <div key={i} style={{ padding: '16px', borderBottom: `1px solid ${T.borderSubtle}` }}><SkeletonLine width="50%" height="13px" /></div>)
-              ) : holidays.length === 0 ? (
-                <EmptyState icon={EmptyIcons.calendar} title="No holidays yet" message="Company holidays are skipped when business days are counted for time off." />
-              ) : (
-                <>
-                  {!isMobile && (
-                    <div style={s.tHead('minmax(0, 1fr) 120px 120px 90px')}>
-                      <div>Name</div><div>Date</div><div>Repeats</div><div></div>
-                    </div>
-                  )}
-                  {holidays.map(h => (
-                    <div key={h.id} className="il-task-row" style={isMobile
-                      ? { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', padding: '13px 16px', borderBottom: `1px solid ${T.borderSubtle}` }
-                      : s.tRow('minmax(0, 1fr) 120px 120px 90px')}>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontWeight: 500, color: T.text }}>{h.name}</div>
-                        {isMobile && <div style={{ fontSize: 'var(--text-sm)', color: T.muted, marginTop: '2px' }}>{formatDate(h.date)}{h.repeats_yearly ? ' · Every year' : ''}</div>}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <Segmented size="sm" label="Holiday year" value={holidayYear} onChange={setHolidayYear}
+                  options={years.map(y => ({ value: y, label: String(y) }))} />
+                {!holidaysLoading && !hasHandbookYear && (
+                  <Button size="sm" variant="secondary" busy={addingYear} busyLabel="Adding…" onClick={() => addYearHolidays(holidayYear)}>
+                    Add {holidayYear}'s handbook holidays
+                  </Button>
+                )}
+              </div>
+
+              <div style={{ ...s.card, overflow: 'hidden' }}>
+                {holidaysLoading ? (
+                  [1, 2, 3].map(i => <div key={i} style={{ padding: '16px', borderBottom: `1px solid ${T.borderSubtle}` }}><SkeletonLine width="50%" height="13px" /></div>)
+                ) : yearGroups.length === 0 ? (
+                  <EmptyState icon={EmptyIcons.calendar} title={`No ${holidayYear} holidays yet`}
+                    message="Add this year's handbook holidays with the button above. They're worked out for each province, including the ones that move, like Easter and Natal Day." />
+                ) : (
+                  <>
+                    {!isMobile && (
+                      <div style={s.tHead(HOL_COLS)}>
+                        <div>Holiday</div><div>Date</div><div>Branches</div><div></div>
                       </div>
-                      {!isMobile && <div style={{ color: T.muted, fontSize: 'var(--text-sm)' }}>{h.repeats_yearly ? fmtDate(h.date) : formatDate(h.date)}</div>}
-                      {!isMobile && <div style={{ fontSize: 'var(--text-sm)', color: h.repeats_yearly ? T.success : T.subtle }}>{h.repeats_yearly ? 'Every year' : 'Once'}</div>}
-                      <div style={{ textAlign: 'right' }}>
-                        <span className="il-row-actions">
-                          <Button size="xs" variant="ghost" style={{ color: T.danger }} busy={deletingHolidayId === h.id} busyLabel="…" onClick={() => deleteHoliday(h.id)} aria-label={`Remove ${h.name}`}>Remove</Button>
-                        </span>
+                    )}
+                    {yearGroups.map(g => (
+                      <div key={g.key} className="il-task-row" style={isMobile
+                        ? { display: 'grid', gap: '6px', padding: '13px 16px', borderBottom: `1px solid ${T.borderSubtle}` }
+                        : s.tRow(HOL_COLS)}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 500, color: T.text }}>{g.name}</div>
+                          {(g.note || g.repeats || isMobile) && (
+                            <div style={{ fontSize: 'var(--text-xs)', color: T.subtle, marginTop: '2px', lineHeight: 1.4 }}>
+                              {[isMobile ? formatDate(g.date, { weekday: 'short', month: 'short', day: 'numeric' }) : null, g.repeats ? 'Every year' : null, g.note].filter(Boolean).join(' · ')}
+                            </div>
+                          )}
+                        </div>
+                        {!isMobile && <div style={{ color: T.muted, fontSize: 'var(--text-sm)' }}>{formatDate(g.date, { weekday: 'short', month: 'short', day: 'numeric' })}</div>}
+                        <div>{provinceChips(g)}</div>
+                        <div style={{ textAlign: isMobile ? 'left' : 'right' }}>
+                          <span className="il-row-actions">
+                            <Button size="xs" variant="ghost" style={{ color: T.danger }} busy={deletingHolidayKey === g.key} busyLabel="…" onClick={() => deleteHoliday(g)} aria-label={`Remove ${g.name}`}>Remove</Button>
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </>
-              )}
+                    ))}
+                  </>
+                )}
+              </div>
+              <p style={{ fontSize: 'var(--text-xs)', color: T.subtle, margin: '0 2px', lineHeight: 1.6 }}>
+                NS is Halifax, NB is Moncton and Saint John, NL is St. John's, PE is Charlottetown. Stat is a statutory holiday and Obs an observed one, as in the handbook. A fixed-date holiday that lands on a weekend is given on the Monday after, marked "(observed)". Regatta Day is weather-dependent: if it moves, change it here.
+              </p>
             </div>
-          </div>
-        )}
+          )
+        })()}
       </div>
 
       {confirmCancel && (
         <ConfirmModal
           title={`Cancel ${confirmCancel.employee?.full_name?.split(' ')[0] || 'this'}'s time off?`}
-          message={`${fmtDateRange(confirmCancel.start_date, confirmCancel.end_date)}, ${TYPE_LABELS[confirmCancel.type] || confirmCancel.type}.${countsAgainstBalance(confirmCancel.type) ? ` ${formatDays(confirmCancel.business_days)} go back into their balance.` : ''} They'll get an email.`}
+          message={`${fmtDateRange(confirmCancel.start_date, confirmCancel.end_date)}, ${TYPE_LABELS[confirmCancel.type] || confirmCancel.type}.${balanceBucket(confirmCancel.type) ? ` ${formatDays(confirmCancel.business_days)} go back into their ${BUCKETS[balanceBucket(confirmCancel.type)].short}.` : ''} They'll get an email.`}
           confirmLabel="Cancel time off"
           confirmDanger
           onConfirm={() => adminCancel(confirmCancel)}
@@ -1043,23 +1246,92 @@ ${extra}${appLink('/', 'See it in your portal')}`
 
       {startYearOpen && (
         <Modal
-          title={`Set up ${balYear} from ${balYear - 1}`}
-          description={`Copies each person's ${balYear - 1} entitlement into ${balYear} and carries unused days forward, up to the limit below. People who already have a ${balYear} entitlement keep it; only their carry-over is refreshed.`}
+          title={`Copy ${balYear - 1} into ${balYear}`}
+          description={`Gives each person the same Personal / Vacation and Care day allowances in ${balYear} as they had in ${balYear - 1}, starting with nothing used. Unused days don't carry over. Anyone who already has a ${balYear} allowance keeps it.`}
           onClose={() => setStartYearOpen(false)}
           maxWidth={460}
           footer={(
             <>
               <Button variant="secondary" onClick={() => setStartYearOpen(false)}>Close</Button>
-              <Button onClick={startYear}>Set up {balYear}</Button>
+              <Button onClick={startYear}>Copy into {balYear}</Button>
             </>
           )}
         >
-          <Field label="Carry over at most (days)" hint="0 means unused days don't carry over.">
-            <input className="il-input il-tabular" type="number" min="0" step="0.5" value={carryCap} onChange={e => setCarryCap(e.target.value)} />
-          </Field>
           <p style={{ fontSize: 'var(--text-sm)', color: T.muted, margin: 0, lineHeight: 1.55 }}>
-            It's safe to run more than once. Run it in December so people can book January, then again in early January once December's leave is final, so carry-over reflects what was really left.
+            If HR has sent next year's list, use Import HR list instead: it sets each person's own numbers.
           </p>
+        </Modal>
+      )}
+
+      {importOpen && (
+        <Modal
+          title="Import HR list"
+          description="Start dates, branches and each person's Personal / Vacation and Care days for a year. Paste it straight from Excel, or choose a CSV file."
+          onClose={() => setImportOpen(false)}
+          busy={importing}
+          maxWidth={760}
+          footer={(
+            <>
+              <Button variant="secondary" onClick={() => setImportOpen(false)} disabled={importing}>Cancel</Button>
+              <Button onClick={runImport} busy={importing} busyLabel="Importing…" disabled={importReady.length === 0}>
+                Import {importReady.length || ''} {importReady.length === 1 ? 'person' : 'people'}
+              </Button>
+            </>
+          )}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '14px' }}>
+            <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: T.muted }}>Allowances are for</span>
+            <Segmented size="sm" label="Import year" value={importYear} onChange={setImportYear}
+              options={[CURRENT_YEAR, CURRENT_YEAR + 1].map(y => ({ value: y, label: String(y) }))} />
+          </div>
+          <Field label="The list" hint={'First line is the header. Use a "Name" or "Email" column to match people, plus any of "Start date", "Branch", "Vacation" and "Care". Blank cells are left as they are.'}>
+            <textarea rows={6} style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 'var(--text-sm)', resize: 'vertical' }}
+              placeholder={'Name\tStart date\tBranch\tVacation\tCare\nJane Smith\t2019-03-14\tHalifax\t15\t5'}
+              value={importText} onChange={e => setImportText(e.target.value)} />
+          </Field>
+          <label className="il-link-subtle" style={{ display: 'inline-block', fontSize: 'var(--text-sm)', color: T.brand, cursor: 'pointer', marginBottom: '14px' }}>
+            Or choose a CSV file…
+            <input type="file" accept=".csv,.tsv,.txt,text/csv,text/plain" onChange={readImportFile} className="il-visually-hidden" />
+          </label>
+
+          {importPreview?.error && importText.trim() && (
+            <div className="il-field-hint" data-tone="error" role="alert">{importPreview.error}</div>
+          )}
+          {importPreview && !importPreview.error && importPreview.rows.length > 0 && (
+            <div style={{ border: `1px solid ${T.border}`, borderRadius: T.radiusMd, maxHeight: '280px', overflow: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-sm)' }}>
+                <thead>
+                  <tr style={{ background: T.surfaceSunken, position: 'sticky', top: 0 }}>
+                    {['Person', 'Start date', 'Branch', 'Vacation', 'Care', ''].map(h => (
+                      <th key={h} scope="col" style={{ textAlign: 'left', padding: '7px 10px', fontSize: 'var(--text-xs)', color: T.muted, fontWeight: 600, borderBottom: `1px solid ${T.border}` }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {importPreview.rows.map(r => {
+                    const ok = r.employee && r.problems.length === 0
+                    const v = r.values
+                    const cell = { padding: '7px 10px', borderBottom: `1px solid ${T.borderSubtle}`, verticalAlign: 'top' }
+                    return (
+                      <tr key={r.line} style={{ background: ok ? 'transparent' : T.warningBg }}>
+                        <td style={cell}>{r.employee?.full_name || r.label}</td>
+                        <td style={cell}>{v.start_date ? formatDate(v.start_date, { month: 'short', day: 'numeric', year: 'numeric' }) : '–'}</td>
+                        <td style={cell}>{v.branch ? branchName(v.branch) : '–'}</td>
+                        <td style={cell} className="il-tabular">{v.vacation_days ?? '–'}</td>
+                        <td style={cell} className="il-tabular">{v.care_days ?? '–'}</td>
+                        <td style={{ ...cell, color: ok ? T.success : T.warning }}>{ok ? 'Ready' : r.problems.join('. ')}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {importPreview && !importPreview.error && importPreview.rows.length > importReady.length && (
+            <p style={{ fontSize: 'var(--text-xs)', color: T.muted, margin: '10px 0 0', lineHeight: 1.5 }}>
+              Highlighted lines will be skipped. Fix them in the list above, or set those people by hand afterwards.
+            </p>
+          )}
         </Modal>
       )}
 
@@ -1098,11 +1370,16 @@ ${extra}${appLink('/', 'See it in your portal')}`
               </Field>
             )}
           </div>
-          <Field label="Type" hint={countsAgainstBalance(logForm.type) ? 'Uses vacation days.' : "Doesn't use vacation days."}>
+          <Field label="Type" hint={balanceBucket(logForm.type) ? `Uses ${BUCKETS[balanceBucket(logForm.type)].short}.` : "Doesn't use a balance."}>
             <select value={logForm.type} onChange={e => setLogForm(f => ({ ...f, type: e.target.value }))}>
               {LOG_TYPE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
           </Field>
+          {workFromWhereverHint(logForm.type, logForm.start, logForm.portion === 'full' ? logForm.end : logForm.start, logForm.portion) && (
+            <div className="il-field-hint" data-tone="warning" role="status" style={{ margin: '-8px 0 14px' }}>
+              {workFromWhereverHint(logForm.type, logForm.start, logForm.portion === 'full' ? logForm.end : logForm.start, logForm.portion)}
+            </div>
+          )}
           <Field label="Note" optional>
             <input placeholder="e.g. Called in sick" value={logForm.notes} onChange={e => setLogForm(f => ({ ...f, notes: e.target.value }))} />
           </Field>

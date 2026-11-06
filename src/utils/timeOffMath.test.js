@@ -1,16 +1,18 @@
 import { describe, it, expect } from 'vitest'
 import {
-  countsAgainstBalance, yearSplitOf, summarizeYear, remainingIfApproved,
-  findOverlap, employeeCanCancel, relevantYears, formatDays,
+  countsAgainstBalance, balanceBucket, yearSplitOf, summarizeYear, remainingIfApproved,
+  findOverlap, employeeCanCancel, relevantYears, formatDays, workFromWhereverHint,
 } from './timeOffMath'
 
 const vac = (o) => ({ id: o.id || 'r', type: 'personal_vacation', status: 'pending', ...o })
 
 describe('countsAgainstBalance', () => {
-  it('only vacation uses the balance', () => {
-    expect(countsAgainstBalance('personal_vacation')).toBe(true)
-    expect(countsAgainstBalance('vacation')).toBe(true)
-    for (const t of ['bereavement', 'care_day', 'volunteer', 'professional_development', 'work_from_wherever', 'other', 'sick']) {
+  it('vacation and care days use an allowance; nothing else does', () => {
+    expect(balanceBucket('personal_vacation')).toBe('vacation')
+    expect(balanceBucket('vacation')).toBe('vacation')
+    expect(balanceBucket('care_day')).toBe('care')
+    expect(balanceBucket('sick')).toBe('care')
+    for (const t of ['bereavement', 'volunteer', 'professional_development', 'work_from_wherever', 'other']) {
       expect(countsAgainstBalance(t)).toBe(false)
     }
   })
@@ -26,18 +28,26 @@ describe('yearSplitOf', () => {
 })
 
 describe('summarizeYear', () => {
-  const balance = { total_days: 15, carried_over: 2, used_days: 4 }
+  const balance = { total_days: 15, carried_over: 2, used_days: 4, care_days: 5, care_used: 1 }
   const requests = [
     vac({ id: 'a', year_split: { 2026: 3 } }),
     vac({ id: 'b', year_split: { 2026: 1, 2027: 2 } }),
     vac({ id: 'c', status: 'approved', year_split: { 2026: 4 } }), // already in used_days
     { id: 'd', type: 'bereavement', status: 'pending', year_split: { 2026: 2 } }, // doesn't count
+    { id: 'e', type: 'care_day', status: 'pending', year_split: { 2026: 1 } },
   ]
-  it('counts only pending vacation days that fall in the year', () => {
+  it('counts only pending vacation days that fall in the year, with no carry-over', () => {
     const s = summarizeYear(balance, requests, 2026)
     expect(s.pending).toBe(4)
-    expect(s.available).toBe(17)
-    expect(s.remaining).toBe(17 - 4 - 4)
+    expect(s.available).toBe(15)
+    expect(s.remaining).toBe(15 - 4 - 4)
+  })
+  it('keeps care days separate', () => {
+    const s = summarizeYear(balance, requests, 2026, { bucket: 'care' })
+    expect(s.entitlement).toBe(5)
+    expect(s.used).toBe(1)
+    expect(s.pending).toBe(1)
+    expect(s.remaining).toBe(3)
   })
   it('handles a missing balance as zero', () => {
     const s = summarizeYear(null, requests, 2027)
@@ -52,12 +62,32 @@ describe('remainingIfApproved', () => {
     const others = [req, vac({ id: 'y', year_split: { 2027: 1 } })]
     const result = remainingIfApproved(req, { 2026: { total_days: 10, used_days: 9 }, 2027: { total_days: 10, used_days: 0 } }, others)
     expect(result).toEqual([
-      { year: 2026, days: 2, hasBalance: true, remaining: -1 },
-      { year: 2027, days: 3, hasBalance: true, remaining: 6 },
+      { year: 2026, bucket: 'vacation', days: 2, hasBalance: true, remaining: -1 },
+      { year: 2027, bucket: 'vacation', days: 3, hasBalance: true, remaining: 6 },
     ])
+  })
+  it('uses the care allowance for a Care Day', () => {
+    const req = { id: 'c', type: 'care_day', status: 'pending', year_split: { 2026: 1 } }
+    expect(remainingIfApproved(req, { 2026: { total_days: 10, care_days: 3, care_used: 1 } }, [req]))
+      .toEqual([{ year: 2026, bucket: 'care', days: 1, hasBalance: true, remaining: 1 }])
   })
   it('is empty for leave that does not use the balance', () => {
     expect(remainingIfApproved({ type: 'bereavement', year_split: { 2026: 2 } }, {}, [])).toEqual([])
+  })
+})
+
+describe('workFromWhereverHint', () => {
+  it('is quiet for one full Monday-to-Friday week', () => {
+    expect(workFromWhereverHint('work_from_wherever', '2026-11-16', '2026-11-20')).toBeNull()
+  })
+  it('flags part of a week, a week that starts midweek, and half days', () => {
+    expect(workFromWhereverHint('work_from_wherever', '2026-11-16', '2026-11-18')).toMatch(/Monday to Friday/)
+    expect(workFromWhereverHint('work_from_wherever', '2026-11-18', '2026-11-24')).toMatch(/Monday to Friday/)
+    expect(workFromWhereverHint('work_from_wherever', '2026-11-16', '2026-11-27')).toMatch(/Monday to Friday/)
+    expect(workFromWhereverHint('work_from_wherever', '2026-11-16', '2026-11-16', 'am')).toMatch(/Monday to Friday/)
+  })
+  it('only applies to Work from Wherever', () => {
+    expect(workFromWhereverHint('personal_vacation', '2026-11-18', '2026-11-18')).toBeNull()
   })
 })
 

@@ -32,6 +32,7 @@ const TABLES: Array<[string, string]> = [
   ['tech_support_tickets', 'id'],
   ['system_settings', 'key'],
   ['audit_log', 'id'],
+  ['anniversary_notifications', 'id'],
 ]
 const PAGE_SIZE = 1000
 
