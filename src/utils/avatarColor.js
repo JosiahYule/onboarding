@@ -1,15 +1,23 @@
-// Avatar colours. Every avatar takes the brand tint, as ClientLaunch's do.
+// Per-person avatar colours. Each name is hashed onto one hue, so the same
+// person keeps the same colour everywhere in the app (avatars, and their bars
+// on the time off calendar).
 //
-// This used to hash each name onto one of eight hues, so the same person kept
-// the same colour. Under the shared design system colour carries state and
-// nothing else (blue: brand and "you are here"; green: done; amber: waiting on
-// ISL), and eight decorative hues down a list read as eight different states.
-// The name beside the initials already says who it is.
+// The hues deliberately leave out ISL blue, green and amber: in this app those
+// three mean "in progress / you are here", "done" and "waiting", so a person
+// drawn in green beside a progress bar would read as finished.
 //
-// The palette stays a list, and the hash stays, so a future decision to bring
-// per-person colour back is a one-line change rather than a rewrite.
-const PALETTE = [
-  { bg: 'var(--brand-tint)', fg: 'var(--brand-strong)' },
+// Colours are mixed into the current surface rather than written as fixed
+// tints, so the same palette reads in light and dark mode. How much of the
+// hue goes in is --avatar-tint in index.css, stronger in dark mode.
+export const AVATAR_HUES = [
+  '#ea580c', // orange
+  '#e11d48', // rose
+  '#c026d3', // fuchsia
+  '#7c3aed', // violet
+  '#4f46e5', // indigo
+  '#0891b2', // cyan
+  '#0d9488', // teal
+  '#64748b', // slate
 ]
 
 function hash(str) {
@@ -21,9 +29,17 @@ function hash(str) {
   return Math.abs(h)
 }
 
-export function avatarColors(name) {
+export function avatarHue(name) {
   const key = (name || '').trim().toLowerCase() || '?'
-  return PALETTE[hash(key) % PALETTE.length]
+  return AVATAR_HUES[hash(key) % AVATAR_HUES.length]
+}
+
+export function avatarColors(name) {
+  const hue = avatarHue(name)
+  return {
+    bg: `color-mix(in srgb, ${hue} var(--avatar-tint), var(--surface))`,
+    fg: `color-mix(in srgb, ${hue} 72%, var(--text))`,
+  }
 }
 
 // Convenience: returns a style object { background, color } for an avatar chip.

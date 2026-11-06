@@ -243,6 +243,7 @@ The short version of the rules:
 |---|---|
 | White first, hairlines not shadows | Cards are `--surface` with a 1px `--border-card`. No drop shadows on the page; only modals, toasts and drawers get `--shadow-lg`. |
 | One radius | 4px everywhere. Circles only where something is genuinely round. |
+| People have their own colour | Avatars are a deliberate Integrated Launch exception: initials in a circle, one of eight hues per person, picked from their email so they match everywhere (including their time off calendar bars). Use `<Avatar>` from `src/ui/Avatar.js`. The hues leave out blue, green and amber, which carry status. |
 | Three colours carry meaning | ISL blue (`--brand`): brand, primary action, "you are here", in progress. Green: done. Amber: waiting on ISL. Never decorative. |
 | Primary buttons are ISL blue | `<Button>` (variant `primary`). Everything else is outlined (`secondary`) or text. |
 | System font | `--font-heading` / `--font-body`. Nothing downloaded. |

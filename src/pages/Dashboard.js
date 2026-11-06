@@ -2,8 +2,7 @@ import { useState } from 'react'
 import Layout from '../components/Layout'
 import { SkeletonRow } from '../components/Skeleton'
 import { useWindowSize } from '../hooks/useWindowSize'
-import { getInitials } from '../utils/formatUtils'
-import { avatarStyle } from '../utils/avatarColor'
+import Avatar from '../ui/Avatar'
 import { useDashboard, calcProgress } from '../hooks/useDashboard'
 import Button from '../ui/Button'
 import EmptyState, { EmptyIcons } from '../ui/EmptyState'
@@ -21,8 +20,8 @@ const S = {
   statLabel: { fontSize: 'var(--text-xs)', color: T.subtle, marginBottom: '5px', fontWeight: 600, letterSpacing: '0.4px', textTransform: 'uppercase' },
   tableHeader: { display: 'grid', gridTemplateColumns: COLS, padding: '14px 12px', margin: '0 -12px', borderBottom: `1px solid ${T.borderSubtle}`, fontSize: 'var(--text-xs)', color: T.subtle, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', alignItems: 'center', gap: '16px' },
   tableRow: { display: 'grid', gridTemplateColumns: COLS, padding: '14px 12px', margin: '0 -12px', width: 'calc(100% + 24px)', alignItems: 'center', gap: '16px', cursor: 'pointer', borderRadius: T.radiusMd, border: 'none', borderBottom: `1px solid ${T.borderSubtle}`, background: 'none', font: 'inherit', textAlign: 'left', color: 'inherit' },
-  avatar: { width: '28px', height: '28px', borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-xs)', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center' },
-  avatarLg: { width: '38px', height: '38px', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-base)', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  avatar: { width: '28px', height: '28px', borderRadius: '50%', fontSize: 'var(--text-xs)', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  avatarLg: { width: '38px', height: '38px', borderRadius: '50%', fontSize: 'var(--text-base)', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   truncate: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   progressTrack: { flex: 1, height: '4px', background: T.border, borderRadius: '999px', overflow: 'hidden' },
   // ClientLaunch's .tag: a bordered label that marks the exception.
@@ -151,7 +150,7 @@ export default function Dashboard({ session, userProfile, onViewOnboarding, onNa
                 <button type="button" key={o.id} className="il-row il-stagger" aria-label={`${name}, ${o.employees.roles?.name || 'no role'}, ${pct}% complete`}
                   style={{ width: '100%', padding: '14px 16px', border: 'none', borderBottom: `1px solid ${T.borderSubtle}`, background: 'none', font: 'inherit', color: 'inherit', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px', animationDelay: `${Math.min(i, 12) * 25}ms` }}
                   onClick={() => onViewOnboarding(o.id)}>
-                  <div aria-hidden="true" style={{ ...S.avatarLg, ...avatarStyle(name) }}>{getInitials(name)}</div>
+                  <Avatar name={name} colorKey={o.employees.email} size={38} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
                       <span style={{ ...S.truncate, fontSize: 'var(--text-md)', fontWeight: 500, color: T.text }}>{name}</span>
@@ -180,7 +179,7 @@ export default function Dashboard({ session, userProfile, onViewOnboarding, onNa
                   aria-label={`${name}, ${o.employees.roles?.name || 'no role'}, ${pct}% complete, ${phase.label}`}
                   style={{ ...S.tableRow, animationDelay: `${Math.min(i, 12) * 25}ms` }}
                   onClick={() => onViewOnboarding(o.id)}>
-                  <div aria-hidden="true" style={{ ...S.avatar, ...avatarStyle(name) }}>{getInitials(name)}</div>
+                  <Avatar name={name} colorKey={o.employees.email} size={28} />
                   <div style={{ minWidth: 0 }}>
                     <div style={{ ...S.truncate, fontSize: 'var(--text-base)', fontWeight: 500, color: T.text }}>{name}</div>
                     <div style={{ ...S.truncate, fontSize: 'var(--text-sm)', color: T.subtle, marginTop: '2px' }}>

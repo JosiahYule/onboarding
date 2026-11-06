@@ -5,6 +5,7 @@ import { ROLE } from '../config'
 import { displayNameFromEmail } from '../utils/formatUtils'
 import ThemeToggle from '../ui/ThemeToggle'
 import { BrandLockup, BrandMark } from '../ui/Brand'
+import Avatar from '../ui/Avatar'
 
 // Pages that count as a primary tab on mobile; anything else lights up "More".
 const PRIMARY_PAGES = ['dashboard', 'active', 'new-onboarding-select', 'time-off']
@@ -77,14 +78,6 @@ function Icon({ type, size = 14 }) {
   return null
 }
 
-// ClientLaunch's .avatar: a square, like everything else, in the brand tint.
-function UserAvatar({ initials, size }) {
-  return (
-    <div aria-hidden="true" style={{ width: size, height: size, borderRadius: 'var(--radius-sm)', background: 'var(--brand-tint)', color: 'var(--brand-strong)', fontFamily: 'var(--font-heading)', fontSize: 'var(--text-base)', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-      {initials}
-    </div>
-  )
-}
 
 const ROLE_LABELS = { employee: 'Employee', manager: 'Manager', admin: 'Admin', super_admin: 'Super admin' }
 
@@ -224,7 +217,7 @@ export default function Layout({ session, userProfile, currentPage, onNavigate, 
               </div>
               <div style={{ borderTop: '1px solid var(--border)', padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-                  <UserAvatar initials={initials} size="32px" />
+                  <Avatar name={name} initials={initials} colorKey={email} size={32} />
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 'var(--text-base)', fontWeight: 500, color: 'var(--text)', letterSpacing: '-0.1px' }}>{name}</div>
                     <div style={{ fontSize: 'var(--text-xs)', color: 'var(--subtle)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{email}</div>
@@ -300,7 +293,7 @@ export default function Layout({ session, userProfile, currentPage, onNavigate, 
             rail foot does. */}
         <div style={{ marginTop: 'auto', display: 'grid', gap: '12px', padding: '16px 20px 0' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-            <UserAvatar initials={initials} size="32px" />
+            <Avatar name={name} initials={initials} colorKey={email} size={32} />
             <div style={{ display: 'grid', minWidth: 0, lineHeight: 1.25 }}>
               <div title={email} style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</div>
               <div style={{ fontSize: 'var(--text-xs)', color: 'var(--subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ROLE_LABELS[userProfile?.role] || email}</div>

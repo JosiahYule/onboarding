@@ -44,6 +44,13 @@
   --scrollbar-thumb-hover: var(--disabled);
   --skeleton-base: var(--surface-sunken);
   --skeleton-shine: var(--border-subtle);
+  /* How strongly a person's colour tints their avatar (src/utils/avatarColor.js).
+     Dark surfaces need more of the hue for the circle to read at all. */
+  --avatar-tint: 24%;
+}
+:root[data-theme='dark'] { --avatar-tint: 38%; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) { --avatar-tint: 38%; }
 }
 
 * { box-sizing: border-box; }
