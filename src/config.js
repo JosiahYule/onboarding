@@ -21,6 +21,29 @@ export function brandName(code) {
   return code ? (BRANDS.find(b => b.code === code)?.name || code) : ''
 }
 
+// Offices. A branch decides which province's holidays apply to someone
+// (employees.branch; the database maps it to a province in branch_province()).
+// No branch set counts as Halifax.
+export const BRANCHES = [
+  { code: 'halifax', name: 'Halifax', province: 'NS' },
+  { code: 'st_johns', name: "St. John's", province: 'NL' },
+  { code: 'charlottetown', name: 'Charlottetown', province: 'PE' },
+  { code: 'moncton', name: 'Moncton', province: 'NB' },
+  { code: 'saint_john', name: 'Saint John', province: 'NB' },
+]
+export function branchName(code) {
+  return code ? (BRANCHES.find(b => b.code === code)?.name || code) : ''
+}
+export function branchProvince(code) {
+  return BRANCHES.find(b => b.code === code)?.province || 'NS'
+}
+export const PROVINCES = [
+  { code: 'NS', name: 'Nova Scotia', branches: 'Halifax' },
+  { code: 'NB', name: 'New Brunswick', branches: 'Moncton, Saint John' },
+  { code: 'NL', name: 'Newfoundland and Labrador', branches: "St. John's" },
+  { code: 'PE', name: 'Prince Edward Island', branches: 'Charlottetown' },
+]
+
 // The onboarding schedule. The first two weeks are broken into individual
 // business days (Day 1–Day 10); after that come weekly buckets and the
 // longer-range milestones. This ordered list is the source of truth for

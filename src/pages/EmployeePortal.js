@@ -13,7 +13,7 @@ import { normalizeTask, groupParentsByBucket, bucketDateHint, isBucketUpcoming }
 import { TYPE_LABELS, StatusPill, TypeIcon, fmtDateRange } from '../utils/timeOffShared'
 import { escapeHtml, escapeHtmlMultiline } from '../utils/escapeHtml'
 import { notifyHrAndManager, sendEmail, appLink } from '../utils/emailNotify'
-import { countsAgainstBalance, summarizeYear, remainingIfApproved, findOverlap, employeeCanCancel, relevantYears, splitTotal, formatDays } from '../utils/timeOffMath'
+import { countsAgainstBalance, balanceBucket, balanceUseLabel, BUCKETS, summarizeYear, remainingIfApproved, findOverlap, employeeCanCancel, relevantYears, splitTotal, formatDays, workFromWhereverHint } from '../utils/timeOffMath'
 import { TICKET_CATEGORIES, TICKET_URGENCY, TicketStatusPill, categoryLabel, urgencyLabel } from '../utils/ticketShared'
 import { computeProgress, isParentComplete } from '../utils/taskProgress'
 import { attachResolvedUrls } from '../utils/documentUrls'
@@ -111,6 +111,7 @@ export default function EmployeePortal({ session, userProfile, onSwitchToAdmin }
   const [torFlexibilityNote, setTorFlexibilityNote] = useState('')
   const [cancellingId, setCancellingId] = useState(null)
   const [confirmCancelReq, setConfirmCancelReq] = useState(null)
+  const [confirmWfw, setConfirmWfw] = useState(false)
   // Each recount gets a number; a slow answer for old dates is ignored.
   const calcSeq = useRef(0)
 
@@ -272,7 +273,7 @@ export default function EmployeePortal({ session, userProfile, onSwitchToAdmin }
     [timeOffBalances]
   )
 
-  async function submitTimeOffRequest() {
+  async function submitTimeOffRequest({ confirmed = false } = {}) {
     const isHalfDay = torDayPortion !== 'full'
     const endDate = isHalfDay ? torStartDate : torEndDate
     if (!torStartDate || !endDate) { showToast('Please choose your dates.', 'error'); return }
@@ -284,6 +285,8 @@ export default function EmployeePortal({ session, userProfile, onSwitchToAdmin }
     if (splitTotal(torSplit) === 0) { showToast('Those dates are all weekends or company holidays, so there is nothing to request.', 'error'); return }
     const overlap = findOverlap(timeOffRequests, torStartDate, endDate, { portion: torDayPortion })
     if (overlap) { showToast(`You already have a ${overlap.status} request for ${fmtDateRange(overlap.start_date, overlap.end_date)}. Cancel it first, or choose other dates.`, 'error'); return }
+    // A guideline, not a rule: ask once, then send it if they want to.
+    if (!confirmed && workFromWhereverHint(torType, torStartDate, endDate, torDayPortion)) { setConfirmWfw(true); return }
 
     const notesVal = torNotes.trim()
     const volunteeringWith = torType === 'volunteer' ? torVolunteeringWith.trim() : null
@@ -324,11 +327,12 @@ export default function EmployeePortal({ session, userProfile, onSwitchToAdmin }
     logAudit('time_off_requested', 'time_off_request', newReq.id, { type: newReq.type, days: newReq.business_days, start_date: newReq.start_date, end_date: newReq.end_date })
 
     const employeeName = instance?.employees?.full_name || employee?.full_name || 'Employee'
-    const usesBalance = countsAgainstBalance(newReq.type)
+    const bucket = balanceBucket(newReq.type)
     const after = remainingIfApproved(newReq, balancesByYear, nextRequests)
-    const balanceLine = !usesBalance
-      ? "Doesn't use vacation days"
-      : after.map(a => a.hasBalance ? `${formatDays(a.remaining)} left in ${a.year}` : `no ${a.year} entitlement set up yet`).join(', ')
+    const balanceLine = !bucket
+      ? "Doesn't use a balance"
+      : after.map(a => a.hasBalance ? `${formatDays(a.remaining)} ${BUCKETS[bucket].short} left in ${a.year}` : `no ${a.year} allowance set up yet`).join(', ')
+    const wfwNote = workFromWhereverHint(newReq.type, newReq.start_date, newReq.end_date, newReq.day_portion)
     const dayPortionLabel = newReq.day_portion === 'am' ? ' (morning)' : newReq.day_portion === 'pm' ? ' (afternoon)' : ''
     const flexibilityLabel = FLEXIBILITY_OPTIONS.find(f => f.value === newReq.flexibility)?.label || newReq.flexibility
     const html = `
@@ -338,7 +342,7 @@ export default function EmployeePortal({ session, userProfile, onSwitchToAdmin }
   <strong>Type:</strong> ${escapeHtml(TYPE_LABELS[newReq.type] || newReq.type)}<br/>
   <strong>Business days:</strong> ${formatDays(newReq.business_days)}${dayPortionLabel}<br/>
   <strong>Flexibility:</strong> ${escapeHtml(flexibilityLabel)}${flexibilityNote ? `: ${escapeHtml(flexibilityNote)}` : ''}<br/>
-  <strong>Vacation balance if approved:</strong> ${escapeHtml(balanceLine)}${volunteeringWith ? `<br/><strong>Volunteering with:</strong> ${escapeHtml(volunteeringWith)}` : ''}${notesVal ? `<br/><strong>Notes:</strong> ${escapeHtmlMultiline(notesVal)}` : ''}
+  <strong>Balance if approved:</strong> ${escapeHtml(balanceLine)}${wfwNote ? '<br/><strong>Heads up:</strong> not one full Monday to Friday week' : ''}${volunteeringWith ? `<br/><strong>Volunteering with:</strong> ${escapeHtml(volunteeringWith)}` : ''}${notesVal ? `<br/><strong>Notes:</strong> ${escapeHtmlMultiline(notesVal)}` : ''}
 </p>
 ${appLink(ROUTES.TIME_OFF, 'Review it in Integrated Launch')}`
 
@@ -610,7 +614,10 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
   const liveRequests = timeOffRequests.filter(r => r.status === TIME_OFF_STATUS.PENDING || r.status === TIME_OFF_STATUS.APPROVED)
   const yearOptions = relevantYears(CURRENT_YEAR, { balances: timeOffBalances, requests: liveRequests }).filter(y => y >= CURRENT_YEAR)
   const shownYear = yearOptions.includes(balanceYear) ? balanceYear : CURRENT_YEAR
-  const summary = summarizeYear(balancesByYear[String(shownYear)], timeOffRequests, shownYear)
+  const shownBalance = balancesByYear[String(shownYear)]
+  const summaries = ['vacation', 'care'].map(bucket => summarizeYear(shownBalance, timeOffRequests, shownYear, { bucket }))
+  const hasShownBalance = Boolean(shownBalance)
+  const torWfwHint = workFromWhereverHint(torType, torStartDate, torDayPortion !== 'full' ? torStartDate : torEndDate, torDayPortion)
   const torIsHalf = torDayPortion !== 'full'
   const torEnd = torIsHalf ? torStartDate : torEndDate
   const torDays = torSplit ? splitTotal(torSplit) : null
@@ -879,55 +886,55 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
               </>
             ) : (
               <>
-                {/* Vacation balance. Hidden until HR sets one up, unless there's
+                {/* Balances. Hidden until HR sets one up, unless there's
                     another year to switch to. */}
-                {(summary.hasBalance || yearOptions.length > 1) && (
+                {(hasShownBalance || yearOptions.length > 1) && (
                 <section style={styles.balCard} aria-labelledby="il-bal-title">
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
                     <h2 id="il-bal-title" style={{ margin: 0, fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--subtle)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      {yearOptions.length > 1 ? 'Vacation balance' : `${shownYear} vacation balance`}
+                      {yearOptions.length > 1 ? 'Your time off' : `Your ${shownYear} time off`}
                     </h2>
                     {yearOptions.length > 1 && (
                       <Segmented size="sm" label="Balance year" value={shownYear} onChange={setBalanceYear}
                         options={yearOptions.map(y => ({ value: y, label: String(y) }))} />
                     )}
                   </div>
-                  {!summary.hasBalance ? (
+                  {!hasShownBalance ? (
                     <div style={{ fontSize: 'var(--text-base)', color: 'var(--muted)', lineHeight: 1.6 }}>
                       No {shownYear} balance yet.
                     </div>
-                  ) : (
-                    <>
+                  ) : summaries.filter(sum => sum.entitlement > 0 || sum.used > 0 || sum.pending > 0 || sum.bucket === 'vacation').map((sum, i) => (
+                    <div key={sum.bucket} style={i > 0 ? { marginTop: '18px', paddingTop: '18px', borderTop: '1px solid var(--border-subtle)' } : undefined}>
+                      <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: T.text, marginBottom: '12px' }}>{BUCKETS[sum.bucket].label}</div>
                       <div style={styles.balGrid}>
                         <div style={styles.balStat}>
-                          <div style={styles.balNum(false)}>{formatDays(summary.available).slice(0, -1)}</div>
+                          <div style={styles.balNum(false)}>{formatDays(sum.available).slice(0, -1)}</div>
                           <div style={styles.balLabel}>Available</div>
-                          {summary.carried > 0 && <div style={{ fontSize: 'var(--text-xs)', color: T.subtle, marginTop: '2px' }}>incl. {formatDays(summary.carried)} carried over</div>}
                         </div>
                         <div style={styles.balStat}>
-                          <div style={styles.balNum(false)}>{formatDays(summary.used).slice(0, -1)}</div>
+                          <div style={styles.balNum(false)}>{formatDays(sum.used).slice(0, -1)}</div>
                           <div style={styles.balLabel}>Used</div>
                         </div>
                         <div style={styles.balStat}>
-                          <div style={{ ...styles.balNum(false), color: summary.pending > 0 ? T.warning : T.text }}>{formatDays(summary.pending).slice(0, -1)}</div>
+                          <div style={{ ...styles.balNum(false), color: sum.pending > 0 ? T.warning : T.text }}>{formatDays(sum.pending).slice(0, -1)}</div>
                           <div style={styles.balLabel}>Pending</div>
                         </div>
                         <div style={styles.balStat}>
-                          <div style={{ ...styles.balNum(summary.remaining < 0), color: summary.remaining < 0 ? T.danger : T.brand }}>{formatDays(summary.remaining).slice(0, -1)}</div>
-                          <div style={{ ...styles.balLabel, color: summary.remaining < 0 ? T.danger : T.brand }}>Remaining</div>
-                          {summary.remaining < 0 && <div style={{ fontSize: 'var(--text-xs)', color: T.danger, marginTop: '2px' }}>Over limit</div>}
+                          <div style={{ ...styles.balNum(sum.remaining < 0), color: sum.remaining < 0 ? T.danger : T.brand }}>{formatDays(sum.remaining).slice(0, -1)}</div>
+                          <div style={{ ...styles.balLabel, color: sum.remaining < 0 ? T.danger : T.brand }}>Remaining</div>
+                          {sum.remaining < 0 && <div style={{ fontSize: 'var(--text-xs)', color: T.danger, marginTop: '2px' }}>Over limit</div>}
                         </div>
                       </div>
-                      {summary.available > 0 && (
-                        <div style={{ marginTop: '14px', borderTop: '1px solid var(--border-subtle)', paddingTop: '14px' }}>
+                      {sum.available > 0 && (
+                        <div style={{ marginTop: '14px' }}>
                           <div style={{ height: '5px', borderRadius: '3px', background: 'var(--border-subtle)', overflow: 'hidden', display: 'flex' }}>
-                            {summary.used > 0 && <div style={{ width: `${Math.min(100, (summary.used / summary.available) * 100)}%`, background: 'var(--text)', transition: 'width 0.3s ease' }} />}
-                            {summary.pending > 0 && <div style={{ width: `${Math.max(0, Math.min(100 - (summary.used / summary.available) * 100, (summary.pending / summary.available) * 100))}%`, background: T.warning, transition: 'width 0.3s ease' }} />}
+                            {sum.used > 0 && <div style={{ width: `${Math.min(100, (sum.used / sum.available) * 100)}%`, background: 'var(--text)', transition: 'width 0.3s ease' }} />}
+                            {sum.pending > 0 && <div style={{ width: `${Math.max(0, Math.min(100 - (sum.used / sum.available) * 100, (sum.pending / sum.available) * 100))}%`, background: T.warning, transition: 'width 0.3s ease' }} />}
                           </div>
                         </div>
                       )}
-                    </>
-                  )}
+                    </div>
+                  ))}
                 </section>
                 )}
 
@@ -982,7 +989,7 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
                               style={{ width: '16px', height: '16px', margin: 0, accentColor: 'var(--brand)', cursor: 'pointer' }} />
                             <span style={{ flex: 1, fontSize: 'var(--text-base)', color: T.text, fontWeight: active ? 500 : 400 }}>{o.label}</span>
                             <span style={{ fontSize: 'var(--text-xs)', color: T.subtle, textAlign: 'right' }}>
-                              {countsAgainstBalance(o.value) ? 'Uses vacation days' : "Doesn't use vacation days"}
+                              {balanceUseLabel(o.value)}
                             </span>
                           </label>
                         )
@@ -1030,12 +1037,17 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
 
                   {torAfter.filter(a => a.hasBalance && a.remaining < 0).map(a => (
                     <div key={a.year} role="status" style={{ fontSize: 'var(--text-sm)', color: T.warning, background: T.warningBg, border: `1px solid ${T.warningBorder}`, borderRadius: T.radiusSm, padding: '10px 12px', marginBottom: '12px' }}>
-                      This would put you {formatDays(Math.abs(a.remaining))} over your {a.year} balance. You can still send it; HR will decide.
+                      This would put you {formatDays(Math.abs(a.remaining))} over your {a.year} {BUCKETS[a.bucket].short}. You can still send it; HR will decide.
                     </div>
                   ))}
                   {torAfter.some(a => !a.hasBalance) && (
                     <div role="status" style={{ fontSize: 'var(--text-sm)', color: T.muted, background: T.surfaceSunken, border: `1px solid ${T.border}`, borderRadius: T.radiusSm, padding: '10px 12px', marginBottom: '12px' }}>
-                      Your {torAfter.filter(a => !a.hasBalance).map(a => a.year).join(' and ')} entitlement isn't set up yet, so HR will check your balance when they review this.
+                      Your {torAfter.filter(a => !a.hasBalance).map(a => a.year).join(' and ')} allowance isn't set up yet, so HR will check your balance when they review this.
+                    </div>
+                  )}
+                  {torWfwHint && (
+                    <div role="status" style={{ fontSize: 'var(--text-sm)', color: T.warning, background: T.warningBg, border: `1px solid ${T.warningBorder}`, borderRadius: T.radiusSm, padding: '10px 12px', marginBottom: '12px', lineHeight: 1.5 }}>
+                      {torWfwHint}
                     </div>
                   )}
                   {torOverlap && (
@@ -1044,7 +1056,7 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
                     </div>
                   )}
 
-                  <Button disabled={Boolean(submitBlocker) && !torSubmitting} busy={torSubmitting} busyLabel="Submitting…" onClick={submitTimeOffRequest}>Submit request</Button>
+                  <Button disabled={Boolean(submitBlocker) && !torSubmitting} busy={torSubmitting} busyLabel="Submitting…" onClick={() => submitTimeOffRequest()}>Submit request</Button>
                   {submitBlocker && !torSubmitting && !torOverlap && (
                     <div className="il-field-hint" data-tone="muted" style={{ marginTop: '8px' }}>{submitBlocker}</div>
                   )}
@@ -1184,7 +1196,7 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
       {confirmCancelReq && (
         <ConfirmModal
           title="Cancel approved time off?"
-          message={`Your ${fmtDateRange(confirmCancelReq.start_date, confirmCancelReq.end_date)} time off will be cancelled${countsAgainstBalance(confirmCancelReq.type) ? ` and ${formatDays(confirmCancelReq.business_days)} go back into your balance` : ''}. HR will be told. To take it after all, you'd send a new request.`}
+          message={`Your ${fmtDateRange(confirmCancelReq.start_date, confirmCancelReq.end_date)} time off will be cancelled${countsAgainstBalance(confirmCancelReq.type) ? ` and ${formatDays(confirmCancelReq.business_days)} go back into your ${BUCKETS[balanceBucket(confirmCancelReq.type)].short}` : ''}. HR will be told. To take it after all, you'd send a new request.`}
           confirmLabel="Yes, cancel it"
           confirmDanger
           onConfirm={async () => {
@@ -1192,6 +1204,20 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
             setConfirmCancelReq(null)
           }}
           onCancel={() => setConfirmCancelReq(null)}
+        />
+      )}
+
+      {confirmWfw && (
+        <ConfirmModal
+          title="Split Work from Wherever week?"
+          message="Work from Wherever is usually taken as one full week, Monday to Friday, rather than split into parts. You can still send this request, and HR will review it."
+          confirmLabel="Send anyway"
+          cancelLabel="Change dates"
+          onConfirm={async () => {
+            setConfirmWfw(false)
+            await submitTimeOffRequest({ confirmed: true })
+          }}
+          onCancel={() => setConfirmWfw(false)}
         />
       )}
 

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import Button from '../ui/Button'
 import Modal from '../ui/Modal'
 
-export default function ConfirmModal({ title, message, confirmLabel, confirmDanger, onConfirm, onCancel }) {
+export default function ConfirmModal({ title, message, confirmLabel, cancelLabel, confirmDanger, onConfirm, onCancel }) {
   const [confirming, setConfirming] = useState(false)
   const mountedRef = useRef(true)
 
@@ -29,7 +29,7 @@ export default function ConfirmModal({ title, message, confirmLabel, confirmDang
       footer={(
         <>
           <Button variant="secondary" onClick={onCancel} disabled={confirming}>
-            Cancel
+            {cancelLabel || 'Cancel'}
           </Button>
           <Button
             variant={confirmDanger ? 'danger' : 'primary'}

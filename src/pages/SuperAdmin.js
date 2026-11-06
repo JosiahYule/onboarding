@@ -11,7 +11,7 @@ import { clearSettingsCache } from '../utils/getHrEmail'
 import { humanize } from '../utils/formatUtils'
 import { formatDate } from '../utils/dates'
 import { useWindowSize } from '../hooks/useWindowSize'
-import { ROLE, BRANDS, brandName } from '../config'
+import { ROLE, BRANDS, BRANCHES, brandName } from '../config'
 import PageHeader from '../ui/PageHeader'
 import Button from '../ui/Button'
 import Field from '../ui/Field'
@@ -143,8 +143,27 @@ function UsersTab({ isMobile, currentUserId }) {
   }
 
   async function fetchAllEmployees() {
-    const { data } = await supabase.from('employees').select('id, full_name, email, brand').order('full_name')
+    const { data } = await supabase.from('employees').select('id, full_name, email, brand, branch').order('full_name')
     if (data) setAllEmployees(data)
+  }
+
+  const employeesById = useMemo(() => new Map(allEmployees.map(e => [e.id, e])), [allEmployees])
+
+  // A branch belongs to the employee record, so it decides which province's
+  // holidays apply to them wherever they appear in the app.
+  async function changeBranch(user, branch) {
+    const emp = employeesById.get(user.employee_id)
+    if (!emp) return
+    const previous = emp.branch || null
+    setAllEmployees(prev => prev.map(e => e.id === emp.id ? { ...e, branch: branch || null } : e))
+    const { error } = await supabase.from('employees').update({ branch: branch || null }).eq('id', emp.id)
+    if (error) {
+      setAllEmployees(prev => prev.map(e => e.id === emp.id ? { ...e, branch: previous } : e))
+      showToast(handleSupabaseError(error, 'Failed to change branch.'), 'error')
+      return
+    }
+    logAudit('employee_branch_changed', 'employee', emp.id, { employee: emp.full_name, branch: branch || null, previous })
+    showToast(`${emp.full_name}'s branch saved. Their pending time off has been recounted.`)
   }
 
   const linkedEmployeeIds = useMemo(() => new Set(users.filter(u => u.employee_id).map(u => u.employee_id)), [users])
@@ -235,9 +254,22 @@ function UsersTab({ isMobile, currentUserId }) {
     if (u.role === ROLE.SUPER_ADMIN || !u.role || u.role === 'none') return <span style={s.badge(u.role)}>{roleLabel(u.role)}</span>
     return (
       <select className="il-input" aria-label={`Access level for ${u.email}`} disabled={isSelf}
-        style={{ width: 'auto', padding: '5px 8px', fontSize: 'var(--text-sm)' }}
+        style={{ width: 'auto', padding: '5px 30px 5px 8px', fontSize: 'var(--text-sm)' }}
         value={u.role} onChange={e => requestRoleChange(u, e.target.value)}>
         {CHANGEABLE_ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
+      </select>
+    )
+  }
+
+  function branchControl(u) {
+    const emp = u.employee_id ? employeesById.get(u.employee_id) : null
+    if (!emp) return <span style={s.muted} title="This login isn't linked to an employee record">—</span>
+    return (
+      <select className="il-input" aria-label={`Branch for ${emp.full_name}`}
+        style={{ width: 'auto', padding: '5px 30px 5px 8px', fontSize: 'var(--text-sm)' }}
+        value={emp.branch || ''} onChange={e => changeBranch(u, e.target.value)}>
+        <option value="">Not set</option>
+        {BRANCHES.map(b => <option key={b.code} value={b.code}>{b.name}</option>)}
       </select>
     )
   }
@@ -303,7 +335,7 @@ function UsersTab({ isMobile, currentUserId }) {
                     </div>
                     {pendingInvite === emp.id ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        <select className="il-input" aria-label={`Access level for ${emp.full_name}`} style={{ width: 'auto', padding: '5px 8px', fontSize: 'var(--text-sm)' }} value={pendingRole} onChange={e => setPendingRole(e.target.value)}>
+                        <select className="il-input" aria-label={`Access level for ${emp.full_name}`} style={{ width: 'auto', padding: '5px 30px 5px 8px', fontSize: 'var(--text-sm)' }} value={pendingRole} onChange={e => setPendingRole(e.target.value)}>
                           {CHANGEABLE_ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
                         </select>
                         <Button size="xs" busy={inviting} busyLabel="Sending…" onClick={() => sendInviteToEmployee(emp, pendingRole)}>Send invite</Button>
@@ -367,6 +399,7 @@ function UsersTab({ isMobile, currentUserId }) {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
                 {roleControl(u)}
+                {u.employee_id && branchControl(u)}
                 {u.brand && <span style={s.muted}>{brandName(u.brand)}</span>}
               </div>
               <div style={{ fontSize: 'var(--text-xs)', color: T.subtle, marginBottom: statusControl(u) ? '10px' : 0 }}>
@@ -384,6 +417,7 @@ function UsersTab({ isMobile, currentUserId }) {
                 <th style={s.th} scope="col">User</th>
                 <th style={s.th} scope="col">Access</th>
                 <th style={s.th} scope="col">Agency</th>
+                <th style={s.th} scope="col">Branch</th>
                 <th style={s.th} scope="col">Last sign-in</th>
                 <th style={s.th} scope="col">Status</th>
                 <th style={s.th} scope="col"><span className="il-visually-hidden">Actions</span></th>
@@ -398,6 +432,7 @@ function UsersTab({ isMobile, currentUserId }) {
                   </td>
                   <td style={s.td}>{roleControl(u)}</td>
                   <td style={{ ...s.td, ...s.muted }}>{brandName(u.brand) || '—'}</td>
+                  <td style={s.td}>{branchControl(u)}</td>
                   <td style={{ ...s.td, ...s.muted }} className="il-tabular">{u.last_sign_in_at ? formatDate(u.last_sign_in_at, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Never'}</td>
                   <td style={s.td}>{status(u)}</td>
                   <td style={{ ...s.td, textAlign: 'right' }}>{statusControl(u)}</td>
@@ -527,6 +562,7 @@ function AuditLogTab({ isMobile }) {
 const SETTING_META = {
   hr_notification_email: { label: 'HR notification email', hint: 'Receives new-onboarding, completion and time-off notifications.', type: 'email' },
   tech_support_email: { label: 'Tech support email', hint: 'Receives tech support tickets from the employee portal.', type: 'email' },
+  anniversary_notification_email: { label: 'Work anniversary email', hint: "Gets an email about 30 days before each person's start-date anniversary. Leave blank to send none.", type: 'email' },
 }
 
 function SystemSettingsTab() {

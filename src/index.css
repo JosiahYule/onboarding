@@ -267,6 +267,7 @@ input, select, textarea {
 }
 .il-field-hint[data-tone="error"] { color: var(--danger); }
 .il-field-hint[data-tone="muted"] { color: var(--subtle); }
+.il-field-hint[data-tone="warning"] { color: var(--warning); }
 
 /* Primary button. Darkens a step on hover and another when pressed, as
    ClientLaunch's .btn-primary does, rather than fading. */
