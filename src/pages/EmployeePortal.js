@@ -9,7 +9,6 @@ import { getTechSupportEmail } from '../utils/getHrEmail'
 import { logAudit } from '../utils/auditLog'
 import { useWindowSize } from '../hooks/useWindowSize'
 import { SCHEDULE_BUCKETS, getCurrentYear, getToday, FEATURES, ONBOARDING_STATUS, TIME_OFF_STATUS, ROUTES, brandName } from '../config'
-import { getInitials } from '../utils/formatUtils'
 import { normalizeTask, groupParentsByBucket, bucketDateHint, isBucketUpcoming } from '../utils/schedule'
 import { TYPE_LABELS, StatusPill, TypeIcon, fmtDateRange } from '../utils/timeOffShared'
 import { escapeHtml, escapeHtmlMultiline } from '../utils/escapeHtml'
@@ -31,7 +30,7 @@ import SearchInput from '../ui/SearchInput'
 import ThemeToggle from '../ui/ThemeToggle'
 import ProgressRing from '../ui/ProgressRing'
 import AnimatedNumber from '../ui/AnimatedNumber'
-import { avatarStyle } from '../utils/avatarColor'
+import Avatar from '../ui/Avatar'
 
 const BASE_STYLES = {
   app: { minHeight: '100vh', background: 'transparent', fontFamily: T.font, color: T.text },
@@ -649,9 +648,7 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
 
       <div style={styles.hero}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '4px' }}>
-          <div style={{ width: '46px', height: '46px', borderRadius: 'var(--radius-md)', ...avatarStyle(displayName), fontSize: 'var(--text-md)', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, }}>
-            {getInitials(displayName)}
-          </div>
+          <Avatar name={displayName} colorKey={session?.user?.email} size={46} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={styles.name}>Welcome, {displayName.split(' ')[0]}</div>
             <div style={styles.sub}>

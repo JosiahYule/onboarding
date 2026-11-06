@@ -13,6 +13,7 @@ import PageHeader from '../ui/PageHeader'
 import Button from '../ui/Button'
 import Segmented from '../ui/Segmented'
 import FileButton from '../ui/FileButton'
+import Avatar from '../ui/Avatar'
 import EmptyState, { EmptyIcons } from '../ui/EmptyState'
 import { SkeletonLine } from '../components/Skeleton'
 import { humanize } from '../utils/formatUtils'
@@ -749,9 +750,12 @@ async function handleAdminDocumentUpload(e) {
           ) : filteredHistory.map(h => (
             <div key={h.id} className="il-task-row" style={{ ...BASE_STYLES.row, gap: '12px' }}>
               <button type="button" onClick={() => onViewOnboarding(h.id)} className="il-link-subtle"
-                style={{ flex: 1, minWidth: 0, textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit', color: 'inherit' }}>
-                <div style={BASE_STYLES.rowName}>{h.employees.full_name}</div>
-                <div style={BASE_STYLES.rowMuted}>{h.employees.roles?.name || 'Role removed'} · Started {formatDate(h.employees.hire_date, { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+                style={{ flex: 1, minWidth: 0, textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit', color: 'inherit', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <Avatar name={h.employees.full_name} colorKey={h.employees.email} size={32} />
+                <span style={{ minWidth: 0 }}>
+                  <div style={BASE_STYLES.rowName}>{h.employees.full_name}</div>
+                  <div style={BASE_STYLES.rowMuted}>{h.employees.roles?.name || 'Role removed'} · Started {formatDate(h.employees.hire_date, { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+                </span>
               </button>
               <span style={{ ...BASE_STYLES.pill, background: h.status === 'completed' ? T.successBg : T.hoverBg, color: h.status === 'completed' ? T.success : T.muted }}>{humanize(h.status)}</span>
               <span className="il-row-actions"><Button variant="ghost" size="xs"

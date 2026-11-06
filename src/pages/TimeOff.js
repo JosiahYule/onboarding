@@ -22,19 +22,12 @@ import Modal from '../ui/Modal'
 import Segmented from '../ui/Segmented'
 import SearchInput from '../ui/SearchInput'
 import EmptyState, { EmptyIcons } from '../ui/EmptyState'
+import Avatar from '../ui/Avatar'
+import { avatarHue } from '../utils/avatarColor'
 
-// One hue per person (no blue: that's reserved for the "today" marker and UI
-// accents). Bars are tinted by mixing the hue into the current surface, so
-// they read in both light and dark themes.
-const PALETTE = ['#15803d', '#b45309', '#be185d', '#6d28d9', '#0f766e', '#9f1239', '#854d0e', '#7e22ce']
-
-function employeeColor(employeeId) {
-  let h = 5381
-  const id = employeeId || ''
-  for (let i = 0; i < id.length; i++) h = ((h << 5) + h + id.charCodeAt(i)) | 0
-  return PALETTE[Math.abs(h) % PALETTE.length]
-}
-
+// Each person's bar is drawn in their avatar colour (see avatarColor.js), so
+// the calendar and the avatars agree. Bars are tinted by mixing the hue into
+// the current surface, so they read in both light and dark themes.
 function eventColors(hue, pending) {
   return {
     background: pending ? `color-mix(in srgb, ${hue} 10%, var(--surface))` : `color-mix(in srgb, ${hue} 24%, var(--surface))`,
@@ -562,11 +555,14 @@ ${extra}${appLink('/', 'See it in your portal')}`
     return (
       <div key={req.id} style={{ ...s.card, padding: '14px 16px', marginBottom: '10px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: '8px' }}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 'var(--text-md)', fontWeight: 500, color: T.text }}>{req.employee?.full_name || '?'}</div>
-            {overlapNames.length > 0 && (
-              <div style={{ fontSize: 'var(--text-xs)', color: T.warning, marginTop: '2px' }}>{overlapNames.join(', ')} also off</div>
-            )}
+          <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Avatar name={req.employee?.full_name} colorKey={req.employee?.email} size={32} />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 'var(--text-md)', fontWeight: 500, color: T.text }}>{req.employee?.full_name || '?'}</div>
+              {overlapNames.length > 0 && (
+                <div style={{ fontSize: 'var(--text-xs)', color: T.warning, marginTop: '2px' }}>{overlapNames.join(', ')} also off</div>
+              )}
+            </div>
           </div>
           <StatusPill status={req.status} />
         </div>
@@ -681,11 +677,14 @@ ${extra}${appLink('/', 'See it in your portal')}`
                   return (
                     <div key={req.id} role="row" style={{ borderBottom: `1px solid ${T.borderSubtle}`, background: pending ? T.surface : 'transparent' }}>
                       <div style={{ ...s.tRow(REQ_COLS), borderBottom: 'none' }}>
-                        <div role="cell" style={{ minWidth: 0 }}>
-                          <div style={{ fontWeight: 500 }}>{req.employee?.full_name || '?'}</div>
-                          {overlapNames.length > 0 && (
-                            <div style={{ fontSize: 'var(--text-xs)', color: T.warning, marginTop: '2px' }}>{overlapNames.join(', ')} also off</div>
-                          )}
+                        <div role="cell" style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <Avatar name={req.employee?.full_name} colorKey={req.employee?.email} size={28} />
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontWeight: 500 }}>{req.employee?.full_name || '?'}</div>
+                            {overlapNames.length > 0 && (
+                              <div style={{ fontSize: 'var(--text-xs)', color: T.warning, marginTop: '2px' }}>{overlapNames.join(', ')} also off</div>
+                            )}
+                          </div>
                         </div>
                         <div role="cell" style={{ color: T.muted, fontSize: 'var(--text-sm)' }}>{fmtDateRange(req.start_date, req.end_date)}</div>
                         <div role="cell" style={{ display: 'flex', alignItems: 'center', gap: '5px', color: T.muted, fontSize: 'var(--text-sm)', minWidth: 0 }}>
@@ -759,6 +758,7 @@ ${extra}${appLink('/', 'See it in your portal')}`
                       <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" style={{ color: T.subtle, flexShrink: 0, transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>
                         <path d="M3 1.5L6.5 5 3 8.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                       </svg>
+                      <Avatar name={row.employee.full_name} colorKey={row.employee.email} size={28} />
                       <span style={{ minWidth: 0 }}>
                         <span style={{ display: 'block', fontWeight: 500, color: T.text }}>{row.employee.full_name}</span>
                         <span style={{ display: 'block', fontSize: 'var(--text-xs)', color: T.subtle, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.employee.email}</span>
@@ -869,10 +869,10 @@ ${extra}${appLink('/', 'See it in your portal')}`
               {!isMobile && (
                 <div style={{ display: 'flex', gap: '14px', marginLeft: 'auto', alignItems: 'center', fontSize: 'var(--text-sm)', color: T.muted }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span aria-hidden="true" style={{ width: '22px', height: '12px', borderRadius: '3px', ...eventColors(PALETTE[0], false) }} />Approved
+                    <span aria-hidden="true" style={{ width: '22px', height: '12px', borderRadius: '3px', ...eventColors(avatarHue('legend'), false) }} />Approved
                   </span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span aria-hidden="true" style={{ width: '22px', height: '12px', borderRadius: '3px', ...eventColors(PALETTE[0], true) }} />Pending
+                    <span aria-hidden="true" style={{ width: '22px', height: '12px', borderRadius: '3px', ...eventColors(avatarHue('legend'), true) }} />Pending
                   </span>
                   <span style={{ color: T.subtle }}>One colour per person</span>
                 </div>
@@ -948,7 +948,7 @@ ${extra}${appLink('/', 'See it in your portal')}`
                                   left: `calc(${startCol * colPct}% + ${lOff}px)`,
                                   width: `calc(${(endCol - startCol + 1) * colPct}% - ${lOff + rOff}px)`,
                                   height: EVENT_H,
-                                  ...eventColors(employeeColor(req.employee_id), isPending),
+                                  ...eventColors(avatarHue(req.employee?.email || req.employee?.full_name), isPending),
                                   fontSize: 'var(--text-xs)', fontWeight: 600,
                                   display: 'flex', alignItems: 'center', paddingLeft: '6px',
                                   overflow: 'hidden', whiteSpace: 'nowrap',

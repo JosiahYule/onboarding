@@ -14,6 +14,7 @@ import { T } from '../ui/theme'
 import PageHeader from '../ui/PageHeader'
 import Button from '../ui/Button'
 import EmptyState, { EmptyIcons } from '../ui/EmptyState'
+import Avatar from '../ui/Avatar'
 
 // The admin side of the employee portal's Tech support tab: one queue of
 // tickets, each moved from Open to In progress to Resolved. A response written
@@ -155,6 +156,7 @@ ${appLink('/', 'Open your portal')}`,
           return (
             <article key={ticket.id} style={{ ...card, padding: isMobile ? '14px 16px' : '18px 20px', marginBottom: '12px', borderLeft: urgent ? `3px solid ${T.danger}` : card.border }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', flexWrap: 'wrap', marginBottom: '6px' }}>
+                <Avatar name={ticket.employee?.full_name} colorKey={ticket.employee?.email} size={28} />
                 <h2 style={{ margin: 0, flex: '1 1 240px', fontSize: 'var(--text-md)', fontWeight: 600, color: T.text, lineHeight: 1.35 }}>{ticket.title}</h2>
                 <TicketStatusPill status={ticket.status} />
               </div>

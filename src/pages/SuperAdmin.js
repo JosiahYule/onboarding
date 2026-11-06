@@ -17,6 +17,7 @@ import Button from '../ui/Button'
 import Field from '../ui/Field'
 import Segmented from '../ui/Segmented'
 import SearchInput from '../ui/SearchInput'
+import Avatar from '../ui/Avatar'
 import EmptyState, { EmptyIcons } from '../ui/EmptyState'
 import { T } from '../ui/theme'
 
@@ -295,6 +296,7 @@ function UsersTab({ isMobile, currentUserId }) {
               ) : (
                 unlinkedEmployees.map(emp => (
                   <div key={emp.id} style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '10px' : '12px', padding: '10px 0', borderBottom: `1px solid ${T.borderSubtle}` }}>
+                    <Avatar name={emp.full_name} colorKey={emp.email} size={32} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 'var(--text-base)', fontWeight: 500, color: T.text }}>{emp.full_name}</div>
                       <div style={s.muted}>{emp.email || 'No email on file'}{emp.brand ? ` · ${brandName(emp.brand)}` : ''}</div>
