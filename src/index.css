@@ -360,6 +360,8 @@ input, select, textarea {
   background: var(--row-hover) !important;
   color: var(--text) !important;
 }
+.il-nav-section { transition: color 0.12s ease; }
+.il-nav-section:hover { color: var(--text) !important; }
 
 /* Table / list rows */
 .il-row {

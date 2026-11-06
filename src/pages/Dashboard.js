@@ -6,7 +6,6 @@ import Avatar from '../ui/Avatar'
 import { useDashboard, calcProgress } from '../hooks/useDashboard'
 import Button from '../ui/Button'
 import EmptyState, { EmptyIcons } from '../ui/EmptyState'
-import AnimatedNumber from '../ui/AnimatedNumber'
 import PageHeader from '../ui/PageHeader'
 import SearchInput from '../ui/SearchInput'
 import { T } from '../ui/theme'
@@ -17,7 +16,6 @@ import { ROLE } from '../config'
 const COLS = '32px minmax(0, 2fr) minmax(0, 1.4fr) minmax(120px, 1fr) 120px 90px'
 
 const S = {
-  statLabel: { fontSize: 'var(--text-xs)', color: T.subtle, marginBottom: '5px', fontWeight: 600, letterSpacing: '0.4px', textTransform: 'uppercase' },
   tableHeader: { display: 'grid', gridTemplateColumns: COLS, padding: '14px 12px', margin: '0 -12px', borderBottom: `1px solid ${T.borderSubtle}`, fontSize: 'var(--text-xs)', color: T.subtle, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', alignItems: 'center', gap: '16px' },
   tableRow: { display: 'grid', gridTemplateColumns: COLS, padding: '14px 12px', margin: '0 -12px', width: 'calc(100% + 24px)', alignItems: 'center', gap: '16px', cursor: 'pointer', borderRadius: T.radiusMd, border: 'none', borderBottom: `1px solid ${T.borderSubtle}`, background: 'none', font: 'inherit', textAlign: 'left', color: 'inherit' },
   avatar: { width: '28px', height: '28px', borderRadius: '50%', fontSize: 'var(--text-xs)', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center' },
@@ -49,14 +47,13 @@ function Progress({ pct }) {
 }
 
 export default function Dashboard({ session, userProfile, onViewOnboarding, onNavigate, refreshKey }) {
-  const { onboardings, completedCount, loading, fetchError, docStats, offToday, refetch: fetchOnboardings } = useDashboard(refreshKey)
+  const { onboardings, loading, fetchError, docStats, offToday, refetch: fetchOnboardings } = useDashboard(refreshKey)
   const { isMobile } = useWindowSize()
   const [query, setQuery] = useState('')
   // Managers get a read-only dashboard; starting onboardings is admin-only.
   const canManage = userProfile?.role === ROLE.ADMIN || userProfile?.role === ROLE.SUPER_ADMIN
 
   const rows = onboardings.map(o => ({ o, ...calcProgress(o.task_completions), phase: getPhase(o.employees.hire_date) }))
-  const nearlyDone = rows.filter(r => r.total > 0 && r.pct >= 90).length
 
   const q = query.trim().toLowerCase()
   const visible = q
@@ -78,19 +75,6 @@ export default function Dashboard({ session, userProfile, onViewOnboarding, onNa
           </Button>
         )}
       />
-
-      <section aria-label="Summary" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: isMobile ? '8px' : '12px', padding: isMobile ? '14px 16px 4px' : `20px ${px} 6px` }}>
-        {[
-          { label: 'Active', value: onboardings.length },
-          { label: isMobile ? '90%+ done' : 'Nearly done (90%+)', value: nearlyDone },
-          { label: 'Completed', value: completedCount },
-        ].map(stat => (
-          <div key={stat.label} className="il-tile" style={{ padding: isMobile ? '13px 14px' : '18px 22px' }}>
-            <div style={S.statLabel}>{stat.label}</div>
-            <AnimatedNumber value={loading ? 0 : stat.value} style={{ fontSize: isMobile ? 'var(--text-xl)' : 'var(--text-2xl)', fontWeight: 700, letterSpacing: '-0.8px', color: T.text }} />
-          </div>
-        ))}
-      </section>
 
       {offNames.length > 0 && (
         <div role="status" style={{ margin: isMobile ? '10px 16px 0' : `14px ${px} 0`, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', background: T.successBg, border: `1px solid ${T.successBorder}`, borderRadius: T.radiusMd, fontSize: 'var(--text-sm)', color: T.success }}>
