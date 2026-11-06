@@ -132,11 +132,14 @@ export default function EmployeePortal({ session, userProfile, onSwitchToAdmin }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchMyOnboarding is stable, mount-only fetch
   useEffect(() => { fetchMyOnboarding() }, [])
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchTimeOffData is stable, lazy-load on tab change
-  useEffect(() => { if (activeTab === 'time-off' && !timeOffFetched) fetchTimeOffData() }, [activeTab])
+  // Reloaded every time the tab is opened, so a decision HR made or a reply
+  // on a ticket shows up without reloading the whole app. Only the first
+  // load shows a skeleton; later ones update in place.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchTimeOffData is stable, refresh on tab change
+  useEffect(() => { if (activeTab === 'time-off') fetchTimeOffData() }, [activeTab])
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchTickets is stable, lazy-load on tab change
-  useEffect(() => { if (activeTab === 'technical-tickets' && !ticketsFetched) fetchTickets() }, [activeTab])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchTickets is stable, refresh on tab change
+  useEffect(() => { if (activeTab === 'technical-tickets') fetchTickets() }, [activeTab])
 
   useEffect(() => {
     return () => { clearTimeout(celebrationTimer.current) }
@@ -206,7 +209,7 @@ export default function EmployeePortal({ session, userProfile, onSwitchToAdmin }
   }
 
   async function fetchTimeOffData() {
-    setTimeOffLoading(true)
+    if (!timeOffFetched) setTimeOffLoading(true)
     const [{ data: bals, error: balErr }, { data: reqs, error: reqsErr }] = await Promise.all([
       supabase.from('time_off_balances').select('*').eq('employee_id', userProfile.employee_id),
       supabase.from('time_off_requests').select('*').eq('employee_id', userProfile.employee_id).order('start_date', { ascending: false }),
@@ -280,7 +283,7 @@ export default function EmployeePortal({ session, userProfile, onSwitchToAdmin }
     if (torType === 'volunteer' && !torVolunteeringWith.trim()) { showToast('Please say who you will be volunteering with.', 'error'); return }
     if (torSplit === null || torCalculating) { showToast('Still counting business days, please wait a moment.', 'error'); return }
     if (splitTotal(torSplit) === 0) { showToast('Those dates are all weekends or company holidays, so there is nothing to request.', 'error'); return }
-    const overlap = findOverlap(timeOffRequests, torStartDate, endDate)
+    const overlap = findOverlap(timeOffRequests, torStartDate, endDate, { portion: torDayPortion })
     if (overlap) { showToast(`You already have a ${overlap.status} request for ${fmtDateRange(overlap.start_date, overlap.end_date)}. Cancel it first, or choose other dates.`, 'error'); return }
 
     const notesVal = torNotes.trim()
@@ -372,7 +375,7 @@ ${appLink(ROUTES.TIME_OFF, 'Open time off in Integrated Launch')}`
   }
 
   async function fetchTickets() {
-    setTicketsLoading(true)
+    if (!ticketsFetched) setTicketsLoading(true)
     const [{ data, error }, email] = await Promise.all([
       supabase.from('tech_support_tickets').select(TICKET_COLUMNS).eq('employee_id', userProfile.employee_id).order('created_at', { ascending: false }),
       getTechSupportEmail(),
@@ -614,7 +617,7 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
   const torDays = torSplit ? splitTotal(torSplit) : null
   const torSplitYears = torSplit ? Object.entries(torSplit).filter(([, d]) => Number(d) > 0) : []
   const torAfter = torSplit ? remainingIfApproved({ id: '__draft', type: torType, year_split: torSplit }, balancesByYear, timeOffRequests) : []
-  const torOverlap = findOverlap(timeOffRequests, torStartDate, torEnd)
+  const torOverlap = findOverlap(timeOffRequests, torStartDate, torEnd, { portion: torDayPortion })
   const torDatesBackwards = torStartDate && torEnd && torEnd < torStartDate
   const submitBlocker =
     !torStartDate || !torEnd ? 'Choose your dates to continue.'

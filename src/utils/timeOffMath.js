@@ -73,13 +73,21 @@ export function remainingIfApproved(req, balancesByYear, otherRequests) {
 }
 
 // An employee's own pending or approved request that overlaps these dates.
-export function findOverlap(requests, start, end, excludeId) {
+// A morning and an afternoon on the same day don't clash, so someone can take
+// a half-day Care Day and a half-day of vacation together. `portion` is the
+// new request's day_portion: 'full', 'am' or 'pm'.
+export function findOverlap(requests, start, end, { excludeId, portion = 'full' } = {}) {
   if (!start || !end) return null
   return (requests || []).find(r =>
     r.id !== excludeId &&
     (r.status === TIME_OFF_STATUS.PENDING || r.status === TIME_OFF_STATUS.APPROVED) &&
-    r.start_date <= end && r.end_date >= start
+    r.start_date <= end && r.end_date >= start &&
+    !halvesOfTheSameDay(r.day_portion, portion)
   ) || null
+}
+
+function halvesOfTheSameDay(a, b) {
+  return (a === 'am' && b === 'pm') || (a === 'pm' && b === 'am')
 }
 
 // Employees may cancel a pending request any time, and approved leave only

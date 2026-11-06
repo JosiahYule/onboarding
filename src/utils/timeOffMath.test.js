@@ -69,6 +69,12 @@ describe('findOverlap', () => {
   it('finds an overlapping live request', () => {
     expect(findOverlap(reqs, '2026-12-24', '2026-12-28')?.id).toBe('1')
   })
+  it('lets a morning and an afternoon share a day', () => {
+    const half = [{ id: 'm', status: 'pending', start_date: '2026-11-13', end_date: '2026-11-13', day_portion: 'am' }]
+    expect(findOverlap(half, '2026-11-13', '2026-11-13', { portion: 'pm' })).toBeNull()
+    expect(findOverlap(half, '2026-11-13', '2026-11-13', { portion: 'am' })?.id).toBe('m')
+    expect(findOverlap(half, '2026-11-12', '2026-11-13', { portion: 'full' })?.id).toBe('m')
+  })
   it('ignores cancelled requests and non-overlaps', () => {
     expect(findOverlap(reqs, '2026-11-10', '2026-11-10')).toBeNull()
     expect(findOverlap(reqs, '2026-12-25', '2026-12-28')).toBeNull()

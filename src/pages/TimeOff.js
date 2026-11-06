@@ -10,7 +10,7 @@ import { logAudit } from '../utils/auditLog'
 import { useWindowSize } from '../hooks/useWindowSize'
 import { getToday, getCurrentYear, TIME_OFF_STATUS } from '../config'
 import { TYPE_LABELS, StatusPill, TypeIcon, fmtDate, fmtDateRange } from '../utils/timeOffShared'
-import { countsAgainstBalance, summarizeYear, remainingIfApproved, yearSplitOf, formatDays } from '../utils/timeOffMath'
+import { countsAgainstBalance, summarizeYear, remainingIfApproved, yearSplitOf, findOverlap, formatDays } from '../utils/timeOffMath'
 import { escapeHtml } from '../utils/escapeHtml'
 import { sendEmail, appLink } from '../utils/emailNotify'
 import { formatDate } from '../utils/dates'
@@ -125,10 +125,6 @@ const FLEX_LABELS = { firm: 'Firm', moderately_adjustable: 'Moderately adjustabl
 const LEGACY_TYPES = new Set(['vacation', 'sick', 'personal'])
 const LOG_TYPE_OPTIONS = Object.entries(TYPE_LABELS).filter(([k]) => !LEGACY_TYPES.has(k))
 const EMPTY_LOG = { employeeId: '', start: '', end: '', portion: 'full', type: 'personal_vacation', notes: '', approve: true }
-
-function isLive(r) {
-  return r.status === TIME_OFF_STATUS.PENDING || r.status === TIME_OFF_STATUS.APPROVED
-}
 
 // An entitlement counts as "not set" when there's no row, or only the empty
 // row an approval creates on its own (total 0, nothing carried).
@@ -394,7 +390,7 @@ ${extra}${appLink('/', 'See it in your portal')}`
     if (!f.employeeId) { showToast('Choose who the time off is for.', 'error'); return }
     if (!f.start || !end) { showToast('Choose the dates.', 'error'); return }
     if (end < f.start) { showToast('The last day must be on or after the first day.', 'error'); return }
-    const clash = (requestsByEmployee[f.employeeId] || []).find(r => isLive(r) && r.start_date <= end && r.end_date >= f.start)
+    const clash = findOverlap(requestsByEmployee[f.employeeId], f.start, end, { portion: f.portion })
     if (clash) { showToast(`They already have a ${clash.status} request for ${fmtDateRange(clash.start_date, clash.end_date)}.`, 'error'); return }
 
     setLogSaving(true)
