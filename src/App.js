@@ -18,6 +18,7 @@ const PAGE_LOADERS = {
   Admin: () => import('./pages/Admin'),
   SuperAdmin: () => import('./pages/SuperAdmin'),
   TimeOff: () => import('./pages/TimeOff'),
+  TechSupport: () => import('./pages/TechSupport'),
   EmployeePortal: () => import('./pages/EmployeePortal'),
 }
 const Dashboard = lazy(PAGE_LOADERS.Dashboard)
@@ -26,6 +27,7 @@ const OnboardingPlan = lazy(PAGE_LOADERS.OnboardingPlan)
 const Admin = lazy(PAGE_LOADERS.Admin)
 const SuperAdmin = lazy(PAGE_LOADERS.SuperAdmin)
 const TimeOff = lazy(PAGE_LOADERS.TimeOff)
+const TechSupport = lazy(PAGE_LOADERS.TechSupport)
 const EmployeePortal = lazy(PAGE_LOADERS.EmployeePortal)
 
 const PAGE_TITLES = {
@@ -39,6 +41,7 @@ const PAGE_TITLES = {
   roles: 'Roles',
   history: 'History',
   'time-off': 'Time off',
+  'tech-support': 'Tech support',
   'set-password': 'Set your password',
   'super-admin-users': 'Users',
   'super-admin-audit': 'Audit log',
@@ -88,7 +91,7 @@ function App() {
   // corrected too and React never sees a state update during render.
   const redirectTo =
     !userProfile || page === 'set-password' ? null
-    : page === 'time-off' && !canManage ? 'dashboard'
+    : (page === 'time-off' || page === 'tech-support') && !canManage ? 'dashboard'
     : page.startsWith('super-admin') && role !== ROLE.SUPER_ADMIN ? 'dashboard'
     : ADMIN_PAGES.includes(page) && !canManage ? 'dashboard'
     : page === 'new-onboarding' && !selectedRole ? (canManage ? 'new-onboarding-select' : 'dashboard')
@@ -406,6 +409,16 @@ useEffect(() => {
     if (page === 'time-off' && canManage) {
       return (
         <TimeOff
+          session={session}
+          userProfile={userProfile}
+          onNavigate={handleNavigate}
+        />
+      )
+    }
+
+    if (page === 'tech-support' && canManage) {
+      return (
+        <TechSupport
           session={session}
           userProfile={userProfile}
           onNavigate={handleNavigate}

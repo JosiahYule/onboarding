@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import { useWindowSize } from '../hooks/useWindowSize'
 import { ROLE } from '../config'
-import { isSalesRep, openClientPortal } from '../utils/clientPortal'
 import { displayNameFromEmail } from '../utils/formatUtils'
 import ThemeToggle from '../ui/ThemeToggle'
 import { BrandLockup, BrandMark } from '../ui/Brand'
@@ -13,15 +12,13 @@ const PRIMARY_PAGES = ['dashboard', 'active', 'new-onboarding-select', 'time-off
 // The sidebar (desktop) and the "More" drawer (mobile) are built from the same
 // list, so the two can't drift apart. Each section only appears when it has at
 // least one item this user can use.
-function buildSections(userProfile, { onPortal, portalOpening }) {
+function buildSections(userProfile) {
   const role = userProfile?.role
   const canManage = role === ROLE.ADMIN || role === ROLE.SUPER_ADMIN
   const hub = [
     canManage && { id: 'time-off', label: 'Time off', icon: 'calendar' },
+    canManage && { id: 'tech-support', label: 'Tech support', icon: 'wrench' },
     userProfile?.employee_id && { id: 'employee-hub', label: 'My portal', icon: 'person' },
-    // A sales rep may sit anywhere on the role ladder, so this is gated on the
-    // capability flag rather than on role.
-    isSalesRep(userProfile) && { id: 'client-packages', label: portalOpening ? 'Opening…' : 'Client packages', icon: 'external', onClick: onPortal, disabled: portalOpening },
   ].filter(Boolean)
 
   return [
@@ -74,6 +71,7 @@ function Icon({ type, size = 14 }) {
   if (type === 'calendar') return <svg {...c}><rect x="1" y="3" width="12" height="10" rx="1"/><path d="M1 6h12M4 1v4M10 1v4"/></svg>
   if (type === 'folder') return <svg {...c}><path d="M1 4a1 1 0 0 1 1-1h3l2 2h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1z"/></svg>
   if (type === 'person') return <svg {...c}><circle cx="7" cy="4.5" r="2.5"/><path d="M1.5 13c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/></svg>
+  if (type === 'wrench') return <svg {...c}><path d="M9.5 1.5a3 3 0 0 0-2.8 4.1L1.8 10.5a1.2 1.2 0 0 0 1.7 1.7l4.9-4.9A3 3 0 0 0 12.5 4.5l-1.8 1.8-1.6-.4-.4-1.6z"/></svg>
   if (type === 'external') return <svg {...c}><path d="M8 2h4v4M12 2L6.5 7.5"/><path d="M10.5 8.5V12h-8.5V3.5H5.5"/></svg>
   if (type === 'dots') return <svg width={size} height={size} viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><circle cx="3" cy="7" r="1.3"/><circle cx="7" cy="7" r="1.3"/><circle cx="11" cy="7" r="1.3"/></svg>
   return null
@@ -96,23 +94,6 @@ const sectionLabel = { fontSize: 'var(--text-xs)', color: 'var(--subtle)', fontW
 export default function Layout({ session, userProfile, currentPage, onNavigate, children }) {
   const { isMobile } = useWindowSize()
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const [portalOpening, setPortalOpening] = useState(false)
-  const [portalError, setPortalError] = useState('')
-
-  // The client portal is a separate app on its own Supabase project; this
-  // signs the rep in there without a second password.
-  async function handleOpenClientPortal() {
-    if (portalOpening) return
-    setPortalOpening(true)
-    setPortalError('')
-    try {
-      await openClientPortal()
-    } catch (err) {
-      setPortalError(err.message)
-    } finally {
-      setPortalOpening(false)
-    }
-  }
 
   useEffect(() => {
     if (!drawerOpen) return
@@ -121,7 +102,7 @@ export default function Layout({ session, userProfile, currentPage, onNavigate, 
     return () => window.removeEventListener('keydown', onKey)
   }, [drawerOpen])
 
-  const sections = buildSections(userProfile, { onPortal: handleOpenClientPortal, portalOpening })
+  const sections = buildSections(userProfile)
   const canManage = userProfile?.role === ROLE.ADMIN || userProfile?.role === ROLE.SUPER_ADMIN
 
   function activate(item) {
@@ -136,9 +117,6 @@ export default function Layout({ session, userProfile, currentPage, onNavigate, 
   const isMoreActive = !PRIMARY_PAGES.includes(currentPage)
 
   const skipLink = <a href="#main" className="il-skip-link">Skip to content</a>
-  const portalErrorNote = portalError && (
-    <div role="alert" style={{ fontSize: 'var(--text-xs)', color: 'var(--danger)', padding: '2px 12px 4px', lineHeight: 1.4 }}>{portalError}</div>
-  )
 
   // ── MOBILE LAYOUT ──
   if (isMobile) {
@@ -243,7 +221,6 @@ export default function Layout({ session, userProfile, currentPage, onNavigate, 
                     ))}
                   </div>
                 ))}
-                {portalErrorNote}
               </div>
               <div style={{ borderTop: '1px solid var(--border)', padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
@@ -314,7 +291,6 @@ export default function Layout({ session, userProfile, currentPage, onNavigate, 
                     </button>
                   )
                 })}
-                {section.id === 'hub' && portalErrorNote}
               </div>
             </div>
           ))}

@@ -42,6 +42,12 @@ const ACTION_LABELS = {
   time_off_approved: 'Time off approved',
   time_off_denied: 'Time off denied',
   time_off_cancelled: 'Time off cancelled',
+  time_off_logged: 'Time off logged by HR',
+  time_off_balance_updated: 'Time off balance updated',
+  time_off_year_started: 'Time off year set up',
+  ticket_submitted: 'Tech ticket submitted',
+  ticket_updated: 'Tech ticket updated',
+  // Kept so older log entries still read well.
   client_portal_opened: 'Client portal opened',
 }
 

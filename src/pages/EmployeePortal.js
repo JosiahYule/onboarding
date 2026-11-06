@@ -8,12 +8,14 @@ import { handleSupabaseError } from '../utils/handleError'
 import { getTechSupportEmail } from '../utils/getHrEmail'
 import { logAudit } from '../utils/auditLog'
 import { useWindowSize } from '../hooks/useWindowSize'
-import { SCHEDULE_BUCKETS, getCurrentYear, FEATURES, ONBOARDING_STATUS, TIME_OFF_STATUS, brandName } from '../config'
+import { SCHEDULE_BUCKETS, getCurrentYear, getToday, FEATURES, ONBOARDING_STATUS, TIME_OFF_STATUS, ROUTES, brandName } from '../config'
 import { getInitials } from '../utils/formatUtils'
 import { normalizeTask, groupParentsByBucket, bucketDateHint, isBucketUpcoming } from '../utils/schedule'
 import { TYPE_LABELS, StatusPill, TypeIcon, fmtDateRange } from '../utils/timeOffShared'
 import { escapeHtml, escapeHtmlMultiline } from '../utils/escapeHtml'
-import { notifyHrAndManager } from '../utils/emailNotify'
+import { notifyHrAndManager, sendEmail, appLink } from '../utils/emailNotify'
+import { countsAgainstBalance, summarizeYear, remainingIfApproved, findOverlap, employeeCanCancel, relevantYears, splitTotal, formatDays } from '../utils/timeOffMath'
+import { TICKET_CATEGORIES, TICKET_URGENCY, TicketStatusPill, categoryLabel, urgencyLabel } from '../utils/ticketShared'
 import { computeProgress, isParentComplete } from '../utils/taskProgress'
 import { attachResolvedUrls } from '../utils/documentUrls'
 import EmptyState, { EmptyIcons } from '../ui/EmptyState'
@@ -30,7 +32,6 @@ import ThemeToggle from '../ui/ThemeToggle'
 import ProgressRing from '../ui/ProgressRing'
 import AnimatedNumber from '../ui/AnimatedNumber'
 import { avatarStyle } from '../utils/avatarColor'
-import { isSalesRep, openClientPortal } from '../utils/clientPortal'
 
 const BASE_STYLES = {
   app: { minHeight: '100vh', background: 'transparent', fontFamily: T.font, color: T.text },
@@ -68,13 +69,7 @@ const FLEXIBILITY_OPTIONS = [
   { value: 'other', label: 'Other' },
 ]
 
-const TICKET_CATEGORIES = [
-  { value: 'software', label: 'Software' },
-  { value: 'hardware', label: 'Hardware' },
-  { value: 'access_login', label: 'Access / Login' },
-  { value: 'network', label: 'Network / Connectivity' },
-  { value: 'other', label: 'Other' },
-]
+const TICKET_COLUMNS = 'id, category, urgency, title, description, status, admin_notes, created_at, updated_at, resolved_at'
 
 
 export default function EmployeePortal({ session, userProfile, onSwitchToAdmin }) {
@@ -92,21 +87,23 @@ export default function EmployeePortal({ session, userProfile, onSwitchToAdmin }
   const { toast, showToast, hideToast } = useToast()
   const { isMobile } = useWindowSize()
   const [uploadingDocId, setUploadingDocId] = useState(null)
-  const [portalOpening, setPortalOpening] = useState(false)
   const celebrationTimer = useRef(null)
   // Recomputed each render so a long-lived tab doesn't stick to last year.
   const CURRENT_YEAR = getCurrentYear()
 
   // Time off state
-  const [timeOffBalance, setTimeOffBalance] = useState(null)
+  const [timeOffBalances, setTimeOffBalances] = useState([])
   const [timeOffRequests, setTimeOffRequests] = useState([])
   const [timeOffLoading, setTimeOffLoading] = useState(false)
   const [timeOffFetched, setTimeOffFetched] = useState(false)
+  const [balanceYear, setBalanceYear] = useState(CURRENT_YEAR)
   const [torStartDate, setTorStartDate] = useState('')
   const [torEndDate, setTorEndDate] = useState('')
   const [torType, setTorType] = useState('personal_vacation')
   const [torNotes, setTorNotes] = useState('')
-  const [torBusinessDays, setTorBusinessDays] = useState(null)
+  // Business days per year for the dates being entered, e.g. { 2026: 3 }.
+  // null until the database has counted them.
+  const [torSplit, setTorSplit] = useState(null)
   const [torCalculating, setTorCalculating] = useState(false)
   const [torSubmitting, setTorSubmitting] = useState(false)
   const [torDayPortion, setTorDayPortion] = useState('full')
@@ -115,22 +112,31 @@ export default function EmployeePortal({ session, userProfile, onSwitchToAdmin }
   const [torFlexibilityNote, setTorFlexibilityNote] = useState('')
   const [cancellingId, setCancellingId] = useState(null)
   const [confirmCancelReq, setConfirmCancelReq] = useState(null)
+  // Each recount gets a number; a slow answer for old dates is ignored.
+  const calcSeq = useRef(0)
 
   // Company resources search
   const [resourceSearch, setResourceSearch] = useState('')
 
-  // Tech tickets state
+  // Tech support state
   const [ticketCategory, setTicketCategory] = useState('software')
+  const [ticketUrgency, setTicketUrgency] = useState('normal')
   const [ticketTitle, setTicketTitle] = useState('')
   const [ticketDescription, setTicketDescription] = useState('')
   const [ticketSubmitting, setTicketSubmitting] = useState(false)
-  const [submittedTickets, setSubmittedTickets] = useState([])
+  const [tickets, setTickets] = useState([])
+  const [ticketsLoading, setTicketsLoading] = useState(false)
+  const [ticketsFetched, setTicketsFetched] = useState(false)
+  const [techEmail, setTechEmail] = useState(null)
 
   // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchMyOnboarding is stable, mount-only fetch
   useEffect(() => { fetchMyOnboarding() }, [])
 
   // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchTimeOffData is stable, lazy-load on tab change
   useEffect(() => { if (activeTab === 'time-off' && !timeOffFetched) fetchTimeOffData() }, [activeTab])
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchTickets is stable, lazy-load on tab change
+  useEffect(() => { if (activeTab === 'technical-tickets' && !ticketsFetched) fetchTickets() }, [activeTab])
 
   useEffect(() => {
     return () => { clearTimeout(celebrationTimer.current) }
@@ -201,259 +207,237 @@ export default function EmployeePortal({ session, userProfile, onSwitchToAdmin }
 
   async function fetchTimeOffData() {
     setTimeOffLoading(true)
-    const [{ data: bal }, { data: reqs, error: reqsErr }] = await Promise.all([
-      supabase.from('time_off_balances').select('*').eq('employee_id', userProfile.employee_id).eq('year', CURRENT_YEAR).maybeSingle(),
-      supabase.from('time_off_requests').select('*').eq('employee_id', userProfile.employee_id).order('created_at', { ascending: false }),
+    const [{ data: bals, error: balErr }, { data: reqs, error: reqsErr }] = await Promise.all([
+      supabase.from('time_off_balances').select('*').eq('employee_id', userProfile.employee_id),
+      supabase.from('time_off_requests').select('*').eq('employee_id', userProfile.employee_id).order('start_date', { ascending: false }),
     ])
-    setTimeOffBalance(bal || null)
-    if (reqsErr) showToast(handleSupabaseError(reqsErr, 'Failed to load requests.'), 'error')
+    if (balErr || reqsErr) showToast(handleSupabaseError(balErr || reqsErr, 'Failed to load your time off.'), 'error')
+    setTimeOffBalances(bals || [])
     setTimeOffRequests(reqs || [])
     setTimeOffFetched(true)
     setTimeOffLoading(false)
   }
 
-  async function calculateBusinessDays(start, end) {
-    if (!start || !end || end < start) { setTorBusinessDays(null); return }
+  // The database counts the business days (skipping weekends and company
+  // holidays) and splits them by year, so the number shown here is the same
+  // number HR approves.
+  async function recalcDays(start, end, portion) {
+    const seq = ++calcSeq.current
+    const half = portion !== 'full'
+    const last = half ? start : end
+    if (!start || !last || last < start) { setTorSplit(null); setTorCalculating(false); return }
     setTorCalculating(true)
-    const { data, error } = await supabase.rpc('calculate_business_days', { p_start: start, p_end: end })
-    if (error) { showToast(handleSupabaseError(error, 'Failed to calculate days.'), 'error'); setTorCalculating(false); return }
-    setTorBusinessDays(data)
+    const { data, error } = await supabase.rpc('time_off_year_split', { p_start: start, p_end: last, p_half_day: half })
+    if (seq !== calcSeq.current) return
     setTorCalculating(false)
+    if (error) { setTorSplit(null); showToast(handleSupabaseError(error, 'Failed to count business days.'), 'error'); return }
+    setTorSplit(data || {})
+  }
+
+  function handleStartChange(value) {
+    setTorStartDate(value)
+    if (torDayPortion !== 'full') setTorEndDate(value)
+    recalcDays(value, torDayPortion !== 'full' ? value : torEndDate, torDayPortion)
+  }
+
+  function handleEndChange(value) {
+    setTorEndDate(value)
+    recalcDays(torStartDate, value, torDayPortion)
   }
 
   function handleDayPortionChange(portion) {
     setTorDayPortion(portion)
-    if (portion !== 'full') {
-      if (torStartDate) setTorEndDate(torStartDate)
-      setTorBusinessDays(0.5)
-      setTorCalculating(false)
-    } else {
-      setTorBusinessDays(null)
-      if (torStartDate && torEndDate) calculateBusinessDays(torStartDate, torEndDate)
-    }
+    if (portion !== 'full' && torStartDate) setTorEndDate(torStartDate)
+    recalcDays(torStartDate, portion !== 'full' ? torStartDate : torEndDate, portion)
   }
 
-  async function submitTimeOffRequest() {
-    if (!torStartDate || !torEndDate) { showToast('Please select start and end dates.', 'error'); return }
-    if (torEndDate < torStartDate) { showToast('End date must be on or after start date.', 'error'); return }
-
-    if (!torFlexibility) { showToast('Please select a flexibility option.', 'error'); return }
-
-    const startDate = torStartDate
-    const endDate = torEndDate
-    const type = torType
-    const notesVal = torNotes.trim()
-    const dayPortion = torDayPortion
-    const isHalfDay = dayPortion !== 'full'
-    const businessDaysVal = isHalfDay ? 0.5 : torBusinessDays
-    const volunteeringWith = torType === 'volunteer' ? torVolunteeringWith.trim() : null
-    const flexibility = torFlexibility
-    const flexibilityNote = torFlexibility === 'other' ? torFlexibilityNote.trim() : null
-
-    if (businessDaysVal === null || torCalculating) { showToast('Calculating business days, please wait.', 'error'); return }
-
-    setTorSubmitting(true)
-
-    // Optimistic add to list
-    const tempId = `temp-${Date.now()}`
-    setTimeOffRequests(prev => [{
-      id: tempId,
-      employee_id: userProfile.employee_id,
-      start_date: startDate,
-      end_date: endDate,
-      business_days: businessDaysVal,
-      type,
-      notes: notesVal || null,
-      status: TIME_OFF_STATUS.PENDING,
-      is_half_day: isHalfDay,
-      day_portion: dayPortion,
-      volunteering_with: volunteeringWith,
-      flexibility,
-      flexibility_note: flexibilityNote,
-      created_at: new Date().toISOString(),
-    }, ...prev])
-
-    // Reset form fields but keep torSubmitting=true to prevent double-submit
+  function resetTimeOffForm() {
+    calcSeq.current++
     setTorStartDate('')
     setTorEndDate('')
     setTorType('personal_vacation')
     setTorNotes('')
-    setTorBusinessDays(null)
+    setTorSplit(null)
+    setTorCalculating(false)
     setTorDayPortion('full')
     setTorVolunteeringWith('')
     setTorFlexibility('')
     setTorFlexibilityNote('')
+  }
 
+  const balancesByYear = useMemo(
+    () => Object.fromEntries(timeOffBalances.map(b => [String(b.year), b])),
+    [timeOffBalances]
+  )
+
+  async function submitTimeOffRequest() {
+    const isHalfDay = torDayPortion !== 'full'
+    const endDate = isHalfDay ? torStartDate : torEndDate
+    if (!torStartDate || !endDate) { showToast('Please choose your dates.', 'error'); return }
+    if (endDate < torStartDate) { showToast('End date must be on or after start date.', 'error'); return }
+    if (!torFlexibility) { showToast('Please select a flexibility option.', 'error'); return }
+    if (torFlexibility === 'other' && !torFlexibilityNote.trim()) { showToast('Please describe how flexible these dates are.', 'error'); return }
+    if (torType === 'volunteer' && !torVolunteeringWith.trim()) { showToast('Please say who you will be volunteering with.', 'error'); return }
+    if (torSplit === null || torCalculating) { showToast('Still counting business days, please wait a moment.', 'error'); return }
+    if (splitTotal(torSplit) === 0) { showToast('Those dates are all weekends or company holidays, so there is nothing to request.', 'error'); return }
+    const overlap = findOverlap(timeOffRequests, torStartDate, endDate)
+    if (overlap) { showToast(`You already have a ${overlap.status} request for ${fmtDateRange(overlap.start_date, overlap.end_date)}. Cancel it first, or choose other dates.`, 'error'); return }
+
+    const notesVal = torNotes.trim()
+    const volunteeringWith = torType === 'volunteer' ? torVolunteeringWith.trim() : null
+    const flexibilityNote = torFlexibility === 'other' ? torFlexibilityNote.trim() : null
+
+    setTorSubmitting(true)
     const { data: newReq, error } = await supabase
       .from('time_off_requests')
       .insert({
         employee_id: userProfile.employee_id,
-        start_date: startDate,
+        start_date: torStartDate,
         end_date: endDate,
-        business_days: businessDaysVal,
-        type,
+        // The database recounts this on insert; sent so the row is never empty.
+        business_days: splitTotal(torSplit),
+        type: torType,
         notes: notesVal || null,
         status: TIME_OFF_STATUS.PENDING,
         is_half_day: isHalfDay,
-        day_portion: dayPortion,
+        day_portion: torDayPortion,
         volunteering_with: volunteeringWith,
-        flexibility,
+        flexibility: torFlexibility,
         flexibility_note: flexibilityNote,
       })
       .select()
       .single()
 
-    setTorSubmitting(false)
-
     if (error) {
-      setTimeOffRequests(prev => prev.filter(r => r.id !== tempId))
+      // Nothing is cleared, so they can fix it and try again.
+      setTorSubmitting(false)
       showToast(handleSupabaseError(error, 'Failed to submit request.'), 'error')
       return
     }
 
-    // Replace temp with real record
-    setTimeOffRequests(prev => prev.map(r => r.id === tempId ? { ...newReq } : r))
-    logAudit('time_off_requested', 'time_off_request', newReq.id, { type, days: businessDaysVal, start_date: startDate, end_date: endDate })
+    const nextRequests = [newReq, ...timeOffRequests]
+    setTimeOffRequests(nextRequests)
+    resetTimeOffForm()
+    setTorSubmitting(false)
+    logAudit('time_off_requested', 'time_off_request', newReq.id, { type: newReq.type, days: newReq.business_days, start_date: newReq.start_date, end_date: newReq.end_date })
 
-    // Send email to HR and manager (fire and forget)
     const employeeName = instance?.employees?.full_name || employee?.full_name || 'Employee'
-    const total = timeOffBalance ? Number(timeOffBalance.total_days) : 0
-    const used = timeOffBalance ? Number(timeOffBalance.used_days) : 0
-    const currentPending = timeOffRequests.filter(r => r.status === TIME_OFF_STATUS.PENDING && r.id !== tempId).reduce((s, r) => s + Number(r.business_days), 0)
-    const remainingAfter = total - used - currentPending - businessDaysVal
-
-    const { data: overlapping } = await supabase
-      .from('time_off_requests')
-      .select('employee_id, start_date, end_date, employees!time_off_requests_employee_id_fkey(full_name)')
-      .eq('status', TIME_OFF_STATUS.APPROVED)
-      .neq('employee_id', userProfile.employee_id)
-      .lte('start_date', endDate)
-      .gte('end_date', startDate)
-
-    const overlapList = (overlapping || [])
-      .map(r => `${escapeHtml(r.employees?.full_name)}: ${fmtDateRange(r.start_date, r.end_date)}`)
-      .join('<br/>')
-
-    const dayPortionLabel = dayPortion === 'am' ? ' (AM)' : dayPortion === 'pm' ? ' (PM)' : ''
-    const flexibilityLabel = FLEXIBILITY_OPTIONS.find(f => f.value === flexibility)?.label || flexibility
-    const emailBody = `
-<p><strong>${escapeHtml(employeeName)}</strong> has submitted a time off request.</p>
+    const usesBalance = countsAgainstBalance(newReq.type)
+    const after = remainingIfApproved(newReq, balancesByYear, nextRequests)
+    const balanceLine = !usesBalance
+      ? "Doesn't use vacation days"
+      : after.map(a => a.hasBalance ? `${formatDays(a.remaining)} left in ${a.year}` : `no ${a.year} entitlement set up yet`).join(', ')
+    const dayPortionLabel = newReq.day_portion === 'am' ? ' (morning)' : newReq.day_portion === 'pm' ? ' (afternoon)' : ''
+    const flexibilityLabel = FLEXIBILITY_OPTIONS.find(f => f.value === newReq.flexibility)?.label || newReq.flexibility
+    const html = `
+<p><strong>${escapeHtml(employeeName)}</strong> has requested time off.</p>
 <p>
-  <strong>Dates:</strong> ${fmtDateRange(startDate, endDate)}<br/>
-  <strong>Type:</strong> ${escapeHtml(TYPE_LABELS[type] || type)}<br/>
-  <strong>Business days:</strong> ${businessDaysVal}${dayPortionLabel}<br/>
-  <strong>Flexibility:</strong> ${escapeHtml(flexibilityLabel)}${flexibilityNote ? ` — ${escapeHtml(flexibilityNote)}` : ''}<br/>
-  <strong>Remaining balance if approved:</strong> ${remainingAfter}d${volunteeringWith ? `<br/><strong>Volunteering with:</strong> ${escapeHtml(volunteeringWith)}` : ''}${notesVal ? `<br/><strong>Notes:</strong> ${escapeHtml(notesVal)}` : ''}
+  <strong>Dates:</strong> ${fmtDateRange(newReq.start_date, newReq.end_date)}<br/>
+  <strong>Type:</strong> ${escapeHtml(TYPE_LABELS[newReq.type] || newReq.type)}<br/>
+  <strong>Business days:</strong> ${formatDays(newReq.business_days)}${dayPortionLabel}<br/>
+  <strong>Flexibility:</strong> ${escapeHtml(flexibilityLabel)}${flexibilityNote ? `: ${escapeHtml(flexibilityNote)}` : ''}<br/>
+  <strong>Vacation balance if approved:</strong> ${escapeHtml(balanceLine)}${volunteeringWith ? `<br/><strong>Volunteering with:</strong> ${escapeHtml(volunteeringWith)}` : ''}${notesVal ? `<br/><strong>Notes:</strong> ${escapeHtmlMultiline(notesVal)}` : ''}
 </p>
-${overlapList ? `<p><strong>Others approved off during this period:</strong><br/>${overlapList}</p>` : ''}
-<p>Please review in the admin panel.</p>`
+${appLink(ROUTES.TIME_OFF, 'Review it in Integrated Launch')}`
 
-    await notifyHrAndManager({
-      subject: `Time off request: ${employeeName}`,
-      html: emailBody,
-      managerId: instance?.employees?.manager_id || employee?.manager_id,
-    })
-
-    showToast('Request submitted.')
+    const sent = await notifyHrAndManager({ subject: `Time off request: ${employeeName}`, html })
+    if (sent.hr === false) showToast('Request submitted, but the email to HR failed. Please let HR know directly.', 'warning')
+    else showToast(sent.hr ? 'Request submitted. HR has been notified.' : 'Request submitted.')
   }
 
   async function cancelTimeOffRequest(req) {
     setCancellingId(req.id)
 
-    // Status change and balance refund happen atomically server-side.
+    // Status change and any balance refund happen together in the database.
     const { error } = await supabase.rpc('cancel_time_off_request', { p_request_id: req.id })
     if (error) { showToast(handleSupabaseError(error, 'Failed to cancel request.'), 'error'); setCancellingId(null); return }
 
     logAudit('time_off_cancelled', 'time_off_request', req.id, { type: req.type, days: req.business_days, previous_status: req.status })
 
     const employeeName = instance?.employees?.full_name || employee?.full_name || 'Employee'
-    const cancelBody = `
-<p><strong>${escapeHtml(employeeName)}</strong> has cancelled their time off request.</p>
+    const html = `
+<p><strong>${escapeHtml(employeeName)}</strong> has cancelled a time off request.</p>
 <p>
   <strong>Dates:</strong> ${fmtDateRange(req.start_date, req.end_date)}<br/>
   <strong>Type:</strong> ${escapeHtml(TYPE_LABELS[req.type] || req.type)}<br/>
-  <strong>Business days:</strong> ${req.business_days}<br/>
-  <strong>Previous status:</strong> ${escapeHtml(req.status)}
-</p>`
-
-    await notifyHrAndManager({
-      subject: `Time off cancelled: ${employeeName}`,
-      html: cancelBody,
-      managerId: instance?.employees?.manager_id || employee?.manager_id,
-    })
+  <strong>Business days:</strong> ${formatDays(req.business_days)}<br/>
+  <strong>Was:</strong> ${escapeHtml(req.status)}
+</p>
+${appLink(ROUTES.TIME_OFF, 'Open time off in Integrated Launch')}`
+    await notifyHrAndManager({ subject: `Time off cancelled: ${employeeName}`, html })
 
     showToast('Request cancelled.')
     setCancellingId(null)
-    setTimeOffFetched(false)
     await fetchTimeOffData()
   }
 
+  async function fetchTickets() {
+    setTicketsLoading(true)
+    const [{ data, error }, email] = await Promise.all([
+      supabase.from('tech_support_tickets').select(TICKET_COLUMNS).eq('employee_id', userProfile.employee_id).order('created_at', { ascending: false }),
+      getTechSupportEmail(),
+    ])
+    if (error) showToast(handleSupabaseError(error, 'Failed to load your tickets.'), 'error')
+    setTickets(data || [])
+    setTechEmail(email || null)
+    setTicketsFetched(true)
+    setTicketsLoading(false)
+  }
+
   async function submitTicket() {
-    if (!ticketTitle.trim()) { showToast('Please enter a subject.', 'error'); return }
-    if (!ticketDescription.trim()) { showToast('Please describe the issue.', 'error'); return }
+    const title = ticketTitle.trim()
+    const description = ticketDescription.trim()
+    if (!title) { showToast('Please enter a subject.', 'error'); return }
+    if (!description) { showToast('Please describe the issue.', 'error'); return }
 
     setTicketSubmitting(true)
-    const employeeName = instance?.employees?.full_name || employee?.full_name || 'Employee'
-    const employeeEmail = session?.user?.email || ''
-    const categoryLabel = TICKET_CATEGORIES.find(c => c.value === ticketCategory)?.label || ticketCategory
-    const timestamp = new Date().toLocaleString('en-CA', { month: 'long', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    // Saved first: the ticket queue is the record, the email is the nudge.
+    const { data: ticket, error } = await supabase
+      .from('tech_support_tickets')
+      .insert({ employee_id: userProfile.employee_id, category: ticketCategory, urgency: ticketUrgency, title, description })
+      .select(TICKET_COLUMNS)
+      .single()
 
-    const techEmail = await getTechSupportEmail()
-
-    const emailHtml = `
-<p><strong>${escapeHtml(employeeName)}</strong> has submitted a technical support request.</p>
-<p>
-  <strong>Category:</strong> ${escapeHtml(categoryLabel)}<br/>
-  <strong>Subject:</strong> ${escapeHtml(ticketTitle.trim())}<br/>
-  <strong>Employee email:</strong> ${escapeHtml(employeeEmail)}<br/>
-  <strong>Submitted:</strong> ${escapeHtml(timestamp)}
-</p>
-<p><strong>Description:</strong><br/>${escapeHtmlMultiline(ticketDescription.trim())}</p>`
-
-    const [emailResult, dbResult] = await Promise.all([
-      techEmail
-        ? supabase.functions.invoke('send-email', {
-            body: {
-              to: techEmail,
-              subject: `[Tech Support] ${categoryLabel}: ${ticketTitle.trim()} — ${employeeName}`,
-              html: emailHtml,
-            },
-          })
-        : Promise.resolve({ error: null }),
-      supabase.from('tech_support_tickets').insert({
-        employee_id: userProfile.employee_id,
-        category: ticketCategory,
-        title: ticketTitle.trim(),
-        description: ticketDescription.trim(),
-      }).select('id, created_at').single(),
-    ])
-
-    setTicketSubmitting(false)
-
-    if (emailResult.error && dbResult.error) {
-      showToast('Failed to submit ticket. Please try again.', 'error')
+    if (error) {
+      setTicketSubmitting(false)
+      showToast(handleSupabaseError(error, 'Failed to submit ticket. Please try again.'), 'error')
       return
     }
 
-    setSubmittedTickets(prev => [{
-      id: dbResult.data?.id || Date.now(),
-      category: ticketCategory,
-      categoryLabel,
-      title: ticketTitle.trim(),
-      description: ticketDescription.trim(),
-      submittedAt: dbResult.data?.created_at || new Date().toISOString(),
-    }, ...prev])
-
+    setTickets(prev => [ticket, ...prev])
     setTicketTitle('')
     setTicketDescription('')
     setTicketCategory('software')
-    showToast('Ticket submitted — we\'ll be in touch soon.')
+    setTicketUrgency('normal')
+    setTicketSubmitting(false)
+    logAudit('ticket_submitted', 'tech_support_ticket', ticket.id, { category: ticket.category, urgency: ticket.urgency })
+
+    const employeeName = instance?.employees?.full_name || employee?.full_name || 'Employee'
+    const employeeEmail = session?.user?.email || ''
+    const to = techEmail || await getTechSupportEmail()
+    const urgent = ticket.urgency === 'blocking'
+    const html = `
+<p><strong>${escapeHtml(employeeName)}</strong> has submitted a tech support ticket.</p>
+<p>
+  <strong>How much it's affecting their work:</strong> ${escapeHtml(urgencyLabel(ticket.urgency))}<br/>
+  <strong>Category:</strong> ${escapeHtml(categoryLabel(ticket.category))}<br/>
+  <strong>Subject:</strong> ${escapeHtml(title)}<br/>
+  <strong>Reply to:</strong> <a href="mailto:${escapeHtml(employeeEmail)}">${escapeHtml(employeeEmail)}</a>
+</p>
+<p><strong>Details:</strong><br/>${escapeHtmlMultiline(description)}</p>
+${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
+    const sent = to ? await sendEmail({
+      to,
+      subject: `[Tech support]${urgent ? ' URGENT:' : ''} ${categoryLabel(ticket.category)}: ${title} (${employeeName})`,
+      html,
+    }) : false
+
+    if (sent) showToast("Ticket sent. You'll see updates on it here.")
+    else showToast("Ticket saved, but the support inbox couldn't be emailed. It's still in the queue and will be seen there.", 'warning')
   }
 
-  const pendingDays = useMemo(
-    () => timeOffRequests.filter(r => r.status === TIME_OFF_STATUS.PENDING).reduce((s, r) => s + Number(r.business_days), 0),
-    [timeOffRequests]
-  )
+  const TODAY = getToday()
+
 
   const subtasksFor = (parent) => tasks.filter(s => s.parentId && s.parentId === parent.templateId)
   const isTaskDone = (parent, comp) => isParentComplete(parent, tasks, comp)
@@ -619,13 +603,31 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
   const displayRole = instance?.employees?.roles?.name || employee?.roles?.name || ''
   const displayHireDate = instance?.employees?.hire_date || employee?.hire_date
 
-  const torTotal = timeOffBalance ? Number(timeOffBalance.total_days) : 0
-  const torUsed = timeOffBalance ? Number(timeOffBalance.used_days) : 0
-  const torPending = pendingDays
-  const torRemaining = torTotal - torUsed - torPending
-  const businessDaysPreview = torDayPortion !== 'full' ? 0.5 : torBusinessDays
-  const torExceedsBalance = businessDaysPreview !== null && torRemaining - businessDaysPreview < 0
-  const submitDisabled = torSubmitting || !torStartDate || !torEndDate || !torFlexibility || (torDayPortion === 'full' && (torBusinessDays === null || torCalculating))
+  // ── Time off: what to show ──
+  // Employees see this year, plus next year once anything is booked into it.
+  const liveRequests = timeOffRequests.filter(r => r.status === TIME_OFF_STATUS.PENDING || r.status === TIME_OFF_STATUS.APPROVED)
+  const yearOptions = relevantYears(CURRENT_YEAR, { balances: timeOffBalances, requests: liveRequests }).filter(y => y >= CURRENT_YEAR)
+  const shownYear = yearOptions.includes(balanceYear) ? balanceYear : CURRENT_YEAR
+  const summary = summarizeYear(balancesByYear[String(shownYear)], timeOffRequests, shownYear)
+  const torIsHalf = torDayPortion !== 'full'
+  const torEnd = torIsHalf ? torStartDate : torEndDate
+  const torDays = torSplit ? splitTotal(torSplit) : null
+  const torSplitYears = torSplit ? Object.entries(torSplit).filter(([, d]) => Number(d) > 0) : []
+  const torAfter = torSplit ? remainingIfApproved({ id: '__draft', type: torType, year_split: torSplit }, balancesByYear, timeOffRequests) : []
+  const torOverlap = findOverlap(timeOffRequests, torStartDate, torEnd)
+  const torDatesBackwards = torStartDate && torEnd && torEnd < torStartDate
+  const submitBlocker =
+    !torStartDate || !torEnd ? 'Choose your dates to continue.'
+    : torDatesBackwards ? 'End date must be on or after the start date.'
+    : torCalculating || torSplit === null ? 'Counting business days…'
+    : torDays === 0 ? 'Those dates are all weekends or company holidays.'
+    : torOverlap ? `You already have a ${torOverlap.status} request that overlaps these dates.`
+    : !torFlexibility ? 'Select a flexibility option to continue.'
+    : null
+  const upcomingRequests = timeOffRequests
+    .filter(r => (r.status === TIME_OFF_STATUS.PENDING || r.status === TIME_OFF_STATUS.APPROVED) && r.end_date >= TODAY)
+    .sort((a, b) => (a.start_date < b.start_date ? -1 : 1))
+  const pastRequests = timeOffRequests.filter(r => !upcomingRequests.includes(r))
 
   return (
     <div style={styles.app}>
@@ -695,7 +697,6 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
             // Unreleased features are labelled rather than silently greyed out.
             { id: 'time-off', label: 'Time off', disabled: !FEATURES.employeeTimeOff, badge: FEATURES.employeeTimeOff ? null : 'Soon' },
             { id: 'technical-tickets', label: 'Tech support', disabled: !FEATURES.techSupport, badge: FEATURES.techSupport ? null : 'Soon' },
-            isSalesRep(userProfile) && { id: 'client-packages', label: 'Client packages' },
           ].filter(Boolean)}
         />
       </div>
@@ -878,97 +879,100 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
               </>
             ) : (
               <>
-                {/* Balance card or empty state */}
-                {!timeOffBalance && timeOffRequests.length === 0 ? (
-                  <div style={{ ...styles.balCard, textAlign: 'center', padding: '28px 20px' }}>
-                    <div style={{ fontSize: 'var(--text-base)', color: 'var(--muted)', lineHeight: 1.6 }}>
-                      Your entitlement hasn't been set yet — contact HR.
-                    </div>
-                  </div>
-                ) : (
-                  <div style={styles.balCard}>
-                    <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--subtle)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '16px' }}>
-                      {CURRENT_YEAR} Balance
-                    </div>
-                    <div style={styles.balGrid}>
-                      <div style={styles.balStat}>
-                        <div style={styles.balNum(false)}>{torTotal}</div>
-                        <div style={styles.balLabel}>Total days</div>
-                      </div>
-                      <div style={styles.balStat}>
-                        <div style={styles.balNum(false)}>{torUsed}</div>
-                        <div style={styles.balLabel}>Used</div>
-                      </div>
-                      <div style={styles.balStat}>
-                        <div style={{ ...styles.balNum(false), color: torPending > 0 ? T.warning : T.text }}>{torPending}</div>
-                        <div style={styles.balLabel}>Pending</div>
-                      </div>
-                      <div style={styles.balStat}>
-                        <div style={{ ...styles.balNum(torRemaining < 0), fontSize: 'var(--text-2xl)', color: torRemaining < 0 ? T.danger : T.brand }}>{torRemaining}</div>
-                        <div style={{ ...styles.balLabel, color: torRemaining < 0 ? T.danger : T.brand }}>Remaining</div>
-                        {torRemaining < 0 && <div style={{ fontSize: 'var(--text-xs)', color: T.danger, marginTop: '2px' }}>Over limit</div>}
-                      </div>
-                    </div>
-                    {torTotal > 0 && (
-                      <div style={{ marginTop: '14px', borderTop: '1px solid var(--border-subtle)', paddingTop: '14px' }}>
-                        <div style={{ height: '5px', borderRadius: '3px', background: 'var(--border-subtle)', overflow: 'hidden', display: 'flex' }}>
-                          {torUsed > 0 && <div style={{ width: `${Math.min(100, (torUsed / torTotal) * 100)}%`, background: 'var(--text)', transition: 'width 0.3s ease' }} />}
-                          {torPending > 0 && <div style={{ width: `${Math.min(100 - (torUsed / torTotal) * 100, (torPending / torTotal) * 100)}%`, background: T.warning, transition: 'width 0.3s ease' }} />}
-                        </div>
-                      </div>
+                {/* Vacation balance */}
+                <section style={styles.balCard} aria-labelledby="il-bal-title">
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                    <h2 id="il-bal-title" style={{ margin: 0, fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--subtle)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      {yearOptions.length > 1 ? 'Vacation balance' : `${shownYear} vacation balance`}
+                    </h2>
+                    {yearOptions.length > 1 && (
+                      <Segmented size="sm" label="Balance year" value={shownYear} onChange={setBalanceYear}
+                        options={yearOptions.map(y => ({ value: y, label: String(y) }))} />
                     )}
                   </div>
-                )}
+                  {!summary.hasBalance ? (
+                    <div style={{ fontSize: 'var(--text-base)', color: 'var(--muted)', lineHeight: 1.6 }}>
+                      Your {shownYear} vacation entitlement hasn't been set up yet. You can still send requests; HR will set it up and check them against it.
+                    </div>
+                  ) : (
+                    <>
+                      <div style={styles.balGrid}>
+                        <div style={styles.balStat}>
+                          <div style={styles.balNum(false)}>{formatDays(summary.available).slice(0, -1)}</div>
+                          <div style={styles.balLabel}>Available</div>
+                          {summary.carried > 0 && <div style={{ fontSize: 'var(--text-xs)', color: T.subtle, marginTop: '2px' }}>incl. {formatDays(summary.carried)} carried over</div>}
+                        </div>
+                        <div style={styles.balStat}>
+                          <div style={styles.balNum(false)}>{formatDays(summary.used).slice(0, -1)}</div>
+                          <div style={styles.balLabel}>Used</div>
+                        </div>
+                        <div style={styles.balStat}>
+                          <div style={{ ...styles.balNum(false), color: summary.pending > 0 ? T.warning : T.text }}>{formatDays(summary.pending).slice(0, -1)}</div>
+                          <div style={styles.balLabel}>Pending</div>
+                        </div>
+                        <div style={styles.balStat}>
+                          <div style={{ ...styles.balNum(summary.remaining < 0), color: summary.remaining < 0 ? T.danger : T.brand }}>{formatDays(summary.remaining).slice(0, -1)}</div>
+                          <div style={{ ...styles.balLabel, color: summary.remaining < 0 ? T.danger : T.brand }}>Remaining</div>
+                          {summary.remaining < 0 && <div style={{ fontSize: 'var(--text-xs)', color: T.danger, marginTop: '2px' }}>Over limit</div>}
+                        </div>
+                      </div>
+                      {summary.available > 0 && (
+                        <div style={{ marginTop: '14px', borderTop: '1px solid var(--border-subtle)', paddingTop: '14px' }}>
+                          <div style={{ height: '5px', borderRadius: '3px', background: 'var(--border-subtle)', overflow: 'hidden', display: 'flex' }}>
+                            {summary.used > 0 && <div style={{ width: `${Math.min(100, (summary.used / summary.available) * 100)}%`, background: 'var(--text)', transition: 'width 0.3s ease' }} />}
+                            {summary.pending > 0 && <div style={{ width: `${Math.max(0, Math.min(100 - (summary.used / summary.available) * 100, (summary.pending / summary.available) * 100))}%`, background: T.warning, transition: 'width 0.3s ease' }} />}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                  <div style={{ fontSize: 'var(--text-xs)', color: T.subtle, marginTop: '12px', lineHeight: 1.5 }}>
+                    Only Personal / Vacation comes out of this balance. Other types of leave are still requested and approved here, they just don't use these days.
+                  </div>
+                </section>
 
                 {/* Request form */}
-                <div style={styles.formCard}>
-                  <div style={{ fontSize: 'var(--text-md)', fontWeight: 500, color: 'var(--text)', marginBottom: '20px' }}>Request time off</div>
+                <section style={styles.formCard} aria-labelledby="il-tor-title">
+                  <h2 id="il-tor-title" style={{ margin: '0 0 20px', fontSize: 'var(--text-md)', fontWeight: 500, color: 'var(--text)' }}>Request time off</h2>
 
-                  {/* Leave dates */}
-                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
-                    <div style={{ minWidth: 0 }}>
-                      <label style={styles.fieldLabel}>Start date</label>
-                      <input
-                        type="date"
-                        style={styles.fieldInput}
-                        value={torStartDate}
-                        onChange={e => {
-                          setTorStartDate(e.target.value)
-                          if (torDayPortion !== 'full') {
-                            setTorEndDate(e.target.value)
-                          } else if (torEndDate) {
-                            calculateBusinessDays(e.target.value, torEndDate)
-                          }
-                        }}
-                      />
-                    </div>
-                    <div style={{ minWidth: 0 }}>
-                      <label style={styles.fieldLabel}>End date</label>
-                      <input
-                        type="date"
-                        style={{ ...styles.fieldInput, ...(torDayPortion !== 'full' ? { background: 'var(--surface-raised)', color: 'var(--subtle)' } : {}) }}
-                        value={torEndDate}
-                        min={torStartDate || undefined}
-                        disabled={torDayPortion !== 'full'}
-                        onChange={e => {
-                          setTorEndDate(e.target.value)
-                          if (torStartDate) calculateBusinessDays(torStartDate, e.target.value)
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* AM / PM / Full day */}
                   <div style={{ marginBottom: '20px' }}>
-                    <label style={styles.fieldLabel}>Duration</label>
+                    <span style={styles.fieldLabel}>Duration</span>
                     <Segmented label="Duration" value={torDayPortion} onChange={handleDayPortionChange}
                       options={[{ value: 'full', label: 'Full day(s)' }, { value: 'am', label: 'Morning' }, { value: 'pm', label: 'Afternoon' }]} />
                   </div>
 
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile || torIsHalf ? '1fr' : '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <label htmlFor="il-tor-start" style={styles.fieldLabel}>{torIsHalf ? 'Date' : 'First day off'}</label>
+                      <input id="il-tor-start" type="date" style={styles.fieldInput} value={torStartDate} onChange={e => handleStartChange(e.target.value)} />
+                    </div>
+                    {!torIsHalf && (
+                      <div style={{ minWidth: 0 }}>
+                        <label htmlFor="il-tor-end" style={styles.fieldLabel}>Last day off</label>
+                        <input id="il-tor-end" type="date" style={styles.fieldInput} value={torEndDate} min={torStartDate || undefined} onChange={e => handleEndChange(e.target.value)} />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Business days, counted by the database */}
+                  {torStartDate && torEnd && !torDatesBackwards && (
+                    <div aria-live="polite" style={{ marginTop: '-8px', marginBottom: '20px', fontSize: 'var(--text-base)', color: 'var(--muted)' }}>
+                      {torCalculating || torDays === null ? (
+                        <span style={{ color: 'var(--subtle)' }}>Counting business days…</span>
+                      ) : (
+                        <span>
+                          <strong style={{ color: 'var(--text)' }}>{formatDays(torDays).slice(0, -1)}</strong> business day{torDays !== 1 ? 's' : ''}
+                          {torSplitYears.length > 1 && ` (${torSplitYears.map(([y, d]) => `${formatDays(d)} in ${y}`).join(', ')})`}
+                          {torDays === 0 && ': these dates are all weekends or company holidays'}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
                   {/* Type of leave */}
                   <div style={{ marginBottom: '20px' }}>
-                    <label style={styles.fieldLabel}>Type of leave</label>
-                    <div role="radiogroup" aria-label="Type of leave" style={{ border: `1px solid ${T.border}`, borderRadius: T.radiusMd, overflow: 'hidden' }}>
+                    <span id="il-tor-type" style={styles.fieldLabel}>Type of leave</span>
+                    <div role="radiogroup" aria-labelledby="il-tor-type" style={{ border: `1px solid ${T.border}`, borderRadius: T.radiusMd, overflow: 'hidden' }}>
                       {TYPE_OPTIONS.map((o, i) => {
                         const active = torType === o.value
                         return (
@@ -976,44 +980,36 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
                             style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '11px 14px', cursor: 'pointer', background: active ? T.brandLight : 'transparent', borderTop: i > 0 ? `1px solid ${T.borderSubtle}` : 'none' }}>
                             <input type="radio" name="Type of leave" value={o.value} checked={active} onChange={() => setTorType(o.value)}
                               style={{ width: '16px', height: '16px', margin: 0, accentColor: 'var(--brand)', cursor: 'pointer' }} />
-                            <span style={{ fontSize: 'var(--text-base)', color: T.text, fontWeight: active ? 500 : 400 }}>{o.label}</span>
+                            <span style={{ flex: 1, fontSize: 'var(--text-base)', color: T.text, fontWeight: active ? 500 : 400 }}>{o.label}</span>
+                            <span style={{ fontSize: 'var(--text-xs)', color: T.subtle, textAlign: 'right' }}>
+                              {countsAgainstBalance(o.value) ? 'Uses vacation days' : "Doesn't use vacation days"}
+                            </span>
                           </label>
                         )
                       })}
                     </div>
                   </div>
 
-                  {/* Volunteering with (conditional) */}
                   {torType === 'volunteer' && (
                     <div style={{ marginBottom: '20px' }}>
-                      <label style={styles.fieldLabel}>Who will you be volunteering with?</label>
-                      <input
-                        type="text"
-                        style={styles.fieldInput}
-                        placeholder="Organization name"
-                        value={torVolunteeringWith}
-                        onChange={e => setTorVolunteeringWith(e.target.value)}
-                        autoFocus
-                      />
+                      <label htmlFor="il-tor-vol" style={styles.fieldLabel}>Who will you be volunteering with? <span aria-hidden="true" style={{ color: T.danger }}>*</span></label>
+                      <input id="il-tor-vol" type="text" style={styles.fieldInput} placeholder="Organization name"
+                        value={torVolunteeringWith} onChange={e => setTorVolunteeringWith(e.target.value)} />
                     </div>
                   )}
 
-                  {/* Notes */}
                   <div style={{ marginBottom: '20px' }}>
-                    <label style={styles.fieldLabel}>Notes (optional)</label>
-                    <textarea
-                      style={{ ...styles.fieldInput, resize: 'vertical', minHeight: '64px' }}
-                      placeholder="Any additional context..."
-                      value={torNotes}
-                      onChange={e => setTorNotes(e.target.value)}
-                    />
+                    <label htmlFor="il-tor-notes" style={styles.fieldLabel}>Notes (optional)</label>
+                    <textarea id="il-tor-notes" style={{ ...styles.fieldInput, resize: 'vertical', minHeight: '64px' }}
+                      placeholder="Anything HR should know, like coverage you've arranged"
+                      value={torNotes} onChange={e => setTorNotes(e.target.value)} />
                   </div>
 
                   {/* Flexibility */}
                   <div style={{ marginBottom: '20px' }}>
-                    <label style={styles.fieldLabel}>Flexibility <span aria-hidden="true" style={{ color: T.danger }}>*</span></label>
-                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--subtle)', marginBottom: '8px' }}>In case of conflicting business issues or overlapping leave requests</div>
-                    <div role="radiogroup" aria-label="Flexibility" style={{ border: `1px solid ${T.border}`, borderRadius: T.radiusMd, overflow: 'hidden' }}>
+                    <span id="il-tor-flex" style={styles.fieldLabel}>How flexible are these dates? <span aria-hidden="true" style={{ color: T.danger }}>*</span></span>
+                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--subtle)', marginBottom: '8px' }}>Helps HR if a busy period or someone else's leave clashes with yours.</div>
+                    <div role="radiogroup" aria-labelledby="il-tor-flex" style={{ border: `1px solid ${T.border}`, borderRadius: T.radiusMd, overflow: 'hidden' }}>
                       {FLEXIBILITY_OPTIONS.map((o, i) => {
                         const active = torFlexibility === o.value
                         return (
@@ -1027,91 +1023,77 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
                       })}
                     </div>
                     {torFlexibility === 'other' && (
-                      <input
-                        type="text"
-                        style={{ ...styles.fieldInput, marginTop: '8px' }}
-                        placeholder="Please describe..."
-                        value={torFlexibilityNote}
-                        onChange={e => setTorFlexibilityNote(e.target.value)}
-                        autoFocus
-                      />
+                      <input type="text" aria-label="Describe your flexibility" style={{ ...styles.fieldInput, marginTop: '8px' }}
+                        placeholder="Please describe..." value={torFlexibilityNote} onChange={e => setTorFlexibilityNote(e.target.value)} />
                     )}
                   </div>
 
-                  {/* Business days display */}
-                  {torStartDate && torEndDate && (
-                    <div style={{ marginBottom: '16px', fontSize: 'var(--text-base)', color: 'var(--muted)' }}>
-                      {torDayPortion !== 'full' ? (
-                        <span style={{ fontWeight: 500 }}>½ day ({torDayPortion.toUpperCase()})</span>
-                      ) : torCalculating ? (
-                        <span style={{ color: 'var(--subtle)' }}>Calculating...</span>
-                      ) : torBusinessDays !== null ? (
-                        <span><strong>{torBusinessDays}</strong> business day{torBusinessDays !== 1 ? 's' : ''}</span>
-                      ) : null}
+                  {torAfter.filter(a => a.hasBalance && a.remaining < 0).map(a => (
+                    <div key={a.year} role="status" style={{ fontSize: 'var(--text-sm)', color: T.warning, background: T.warningBg, border: `1px solid ${T.warningBorder}`, borderRadius: T.radiusSm, padding: '10px 12px', marginBottom: '12px' }}>
+                      This would put you {formatDays(Math.abs(a.remaining))} over your {a.year} balance. You can still send it; HR will decide.
+                    </div>
+                  ))}
+                  {torAfter.some(a => !a.hasBalance) && (
+                    <div role="status" style={{ fontSize: 'var(--text-sm)', color: T.muted, background: T.surfaceSunken, border: `1px solid ${T.border}`, borderRadius: T.radiusSm, padding: '10px 12px', marginBottom: '12px' }}>
+                      Your {torAfter.filter(a => !a.hasBalance).map(a => a.year).join(' and ')} entitlement isn't set up yet, so HR will check your balance when they review this.
+                    </div>
+                  )}
+                  {torOverlap && (
+                    <div className="il-field-hint" data-tone="error" role="alert" style={{ marginBottom: '12px' }}>
+                      You already have a {torOverlap.status} request for {fmtDateRange(torOverlap.start_date, torOverlap.end_date)}. Cancel it first, or choose other dates.
                     </div>
                   )}
 
-                  {torExceedsBalance && (
-                    <div role="status" style={{ fontSize: 'var(--text-sm)', color: T.warning, background: T.warningBg, border: `1px solid ${T.warningBorder}`, borderRadius: T.radiusSm, padding: '10px 12px', marginBottom: '16px' }}>
-                      This request exceeds your remaining balance by {Math.abs(torRemaining - businessDaysPreview)}d. It can still be submitted.
-                    </div>
+                  <Button disabled={Boolean(submitBlocker) && !torSubmitting} busy={torSubmitting} busyLabel="Submitting…" onClick={submitTimeOffRequest}>Submit request</Button>
+                  {submitBlocker && !torSubmitting && !torOverlap && (
+                    <div className="il-field-hint" data-tone="muted" style={{ marginTop: '8px' }}>{submitBlocker}</div>
                   )}
-
-                  {torStartDate && torEndDate && torEndDate < torStartDate && (
-                    <div className="il-field-hint" data-tone="error" style={{ marginBottom: '12px' }}>
-                      End date must be on or after the start date.
-                    </div>
-                  )}
-
-                  <Button disabled={submitDisabled && !torSubmitting} busy={torSubmitting} busyLabel="Submitting…" onClick={submitTimeOffRequest}>Submit request</Button>
-                  {submitDisabled && !torSubmitting && (
-                    <div className="il-field-hint" data-tone="muted" style={{ marginTop: '8px' }}>
-                      {!torStartDate || !torEndDate
-                        ? 'Choose your start and end dates to continue.'
-                        : !torFlexibility
-                          ? 'Select a flexibility option to continue.'
-                          : torCalculating
-                            ? 'Calculating business days…'
-                            : ''}
-                    </div>
-                  )}
-                </div>
+                </section>
 
                 {/* Request history */}
-                <div style={{ fontSize: 'var(--text-md)', fontWeight: 500, color: 'var(--text)', marginBottom: '12px' }}>History</div>
                 {timeOffRequests.length === 0 ? (
                   <EmptyState compact icon={EmptyIcons.calendar} title="No requests yet"
                     message="Time off you request will appear here so you can track its status." />
                 ) : (
-                  timeOffRequests.map(req => (
-                    <div key={req.id} style={{ ...styles.torRow, opacity: req.id?.toString().startsWith('temp-') ? 0.6 : 1 }}>
-                      <div style={{ flex: 1, minWidth: '140px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <TypeIcon type={req.type} size={12} />
-                          <span style={{ fontSize: 'var(--text-base)', fontWeight: 500, color: 'var(--text)' }}>
-                            {fmtDateRange(req.start_date, req.end_date)}
-                          </span>
-                        </div>
-                        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)', marginTop: '2px' }}>
-                          {TYPE_LABELS[req.type] || req.type} · {req.business_days}d{req.day_portion && req.day_portion !== 'full' ? ` (${req.day_portion.toUpperCase()})` : req.is_half_day ? ' (half day)' : ''}
-                        </div>
-                      </div>
-                      <StatusPill status={req.status} />
-                      {req.review_notes && (
-                        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)', fontStyle: 'italic', flex: 1 }}>
-                          {req.review_notes}
-                        </div>
-                      )}
-                      {(req.status === TIME_OFF_STATUS.PENDING || req.status === TIME_OFF_STATUS.APPROVED) && !req.id?.toString().startsWith('temp-') && (
-                        <button
-                          style={styles.cancelBtn}
-                          disabled={cancellingId === req.id}
-                          onClick={() => req.status === TIME_OFF_STATUS.APPROVED ? setConfirmCancelReq(req) : cancelTimeOffRequest(req)}
-                        >
-                          {cancellingId === req.id ? '...' : 'Cancel'}
-                        </button>
-                      )}
-                    </div>
+                  [['Upcoming and pending', upcomingRequests], ['Past', pastRequests]].map(([heading, list]) => list.length > 0 && (
+                    <section key={heading} style={{ marginBottom: '24px' }}>
+                      <h2 style={{ fontSize: 'var(--text-md)', fontWeight: 500, color: 'var(--text)', margin: '0 0 4px' }}>{heading}</h2>
+                      {list.map(req => {
+                        const canCancel = employeeCanCancel(req, TODAY)
+                        const startedApproved = req.status === TIME_OFF_STATUS.APPROVED && !canCancel && req.end_date >= TODAY
+                        return (
+                          <div key={req.id} style={styles.torRow}>
+                            <div style={{ flex: 1, minWidth: '160px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <TypeIcon type={req.type} size={12} />
+                                <span style={{ fontSize: 'var(--text-base)', fontWeight: 500, color: 'var(--text)' }}>{fmtDateRange(req.start_date, req.end_date)}</span>
+                              </div>
+                              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)', marginTop: '2px' }}>
+                                {TYPE_LABELS[req.type] || req.type} · {formatDays(req.business_days)}
+                                {req.day_portion === 'am' ? ' (morning)' : req.day_portion === 'pm' ? ' (afternoon)' : ''}
+                                {!countsAgainstBalance(req.type) && ' · not from your balance'}
+                              </div>
+                              {req.review_notes && (
+                                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)', marginTop: '4px' }}>
+                                  <span style={{ fontWeight: 500 }}>HR note:</span> <span style={{ fontStyle: 'italic' }}>{req.review_notes}</span>
+                                </div>
+                              )}
+                              {startedApproved && (
+                                <div style={{ fontSize: 'var(--text-xs)', color: T.subtle, marginTop: '4px' }}>Already started. Contact HR to change it.</div>
+                              )}
+                            </div>
+                            <StatusPill status={req.status} />
+                            {canCancel && (
+                              <button style={styles.cancelBtn} disabled={cancellingId === req.id}
+                                aria-label={`Cancel request for ${fmtDateRange(req.start_date, req.end_date)}`}
+                                onClick={() => req.status === TIME_OFF_STATUS.APPROVED ? setConfirmCancelReq(req) : cancelTimeOffRequest(req)}>
+                                {cancellingId === req.id ? '...' : 'Cancel'}
+                              </button>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </section>
                   ))
                 )}
               </>
@@ -1121,84 +1103,64 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
 
         {activeTab === 'technical-tickets' && (
           <div className="il-tab-content">
-            <div style={styles.formCard}>
-              <div style={{ fontSize: 'var(--text-md)', fontWeight: 500, color: 'var(--text)', marginBottom: '20px' }}>Submit a tech issue</div>
+            <section style={styles.formCard} aria-labelledby="il-ticket-title">
+              <h2 id="il-ticket-title" style={{ margin: '0 0 6px', fontSize: 'var(--text-md)', fontWeight: 500, color: 'var(--text)' }}>Get tech help</h2>
+              <p style={{ margin: '0 0 20px', fontSize: 'var(--text-sm)', color: T.muted, lineHeight: 1.55 }}>
+                Tell us what's wrong and it goes straight to whoever handles tech support. You'll see their updates on your tickets below.
+                {techEmail && <> If it can't wait, you can also email <a href={`mailto:${techEmail}`} style={{ color: T.brand }}>{techEmail}</a>.</>}
+              </p>
 
-              <div style={{ marginBottom: '16px' }}>
-                <label style={styles.fieldLabel}>Category</label>
-<Segmented size="sm" label="Category" value={ticketCategory} onChange={setTicketCategory} options={TICKET_CATEGORIES} />
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+                <div style={{ minWidth: 0 }}>
+                  <label htmlFor="il-ticket-cat" style={styles.fieldLabel}>Category</label>
+                  <select id="il-ticket-cat" className="il-input" value={ticketCategory} onChange={e => setTicketCategory(e.target.value)}>
+                    {TICKET_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                  </select>
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <span style={styles.fieldLabel}>How much is it affecting your work?</span>
+                  <Segmented size="sm" label="How much is it affecting your work?" value={ticketUrgency} onChange={setTicketUrgency} options={TICKET_URGENCY} />
+                </div>
               </div>
 
               <div style={{ marginBottom: '16px' }}>
-                <label style={styles.fieldLabel}>Subject <span aria-hidden="true" style={{ color: T.danger }}>*</span></label>
-                <input
-                  type="text"
-                  style={styles.fieldInput}
-                  placeholder="Brief description of the issue"
-                  value={ticketTitle}
-                  onChange={e => setTicketTitle(e.target.value)}
-                />
+                <label htmlFor="il-ticket-subject" style={styles.fieldLabel}>Subject <span aria-hidden="true" style={{ color: T.danger }}>*</span></label>
+                <input id="il-ticket-subject" type="text" style={styles.fieldInput} placeholder="e.g. Outlook keeps asking for my password"
+                  value={ticketTitle} onChange={e => setTicketTitle(e.target.value)} />
               </div>
 
               <div style={{ marginBottom: '20px' }}>
-                <label style={styles.fieldLabel}>Details <span aria-hidden="true" style={{ color: T.danger }}>*</span></label>
-                <textarea
-                  style={{ ...styles.fieldInput, resize: 'vertical', minHeight: '100px' }}
+                <label htmlFor="il-ticket-details" style={styles.fieldLabel}>Details <span aria-hidden="true" style={{ color: T.danger }}>*</span></label>
+                <textarea id="il-ticket-details" style={{ ...styles.fieldInput, resize: 'vertical', minHeight: '100px' }}
                   placeholder="What happened? What were you trying to do? Any error messages?"
-                  value={ticketDescription}
-                  onChange={e => setTicketDescription(e.target.value)}
-                />
+                  value={ticketDescription} onChange={e => setTicketDescription(e.target.value)} />
               </div>
 
-              <Button disabled={!ticketTitle.trim() || !ticketDescription.trim()} busy={ticketSubmitting} busyLabel="Submitting…" onClick={submitTicket}>Submit ticket</Button>
-            </div>
+              <Button disabled={!ticketTitle.trim() || !ticketDescription.trim()} busy={ticketSubmitting} busyLabel="Sending…" onClick={submitTicket}>Send ticket</Button>
+            </section>
 
-            {submittedTickets.length > 0 && (
-              <>
-                <div style={{ fontSize: 'var(--text-md)', fontWeight: 500, color: 'var(--text)', marginBottom: '12px' }}>Submitted this session</div>
-                {submittedTickets.map(ticket => (
-                  <div key={ticket.id} style={{ padding: '14px 0', borderBottom: '1px solid var(--border-subtle)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                      <span style={{ fontSize: 'var(--text-xs)', fontWeight: 500, background: 'var(--bg)', color: 'var(--muted)', borderRadius: '4px', padding: '2px 7px' }}>{ticket.categoryLabel}</span>
-                      <span style={{ fontSize: 'var(--text-base)', fontWeight: 500, color: 'var(--text)' }}>{ticket.title}</span>
-                    </div>
-                    <div style={{ fontSize: 'var(--text-sm)', color: 'var(--muted)' }}>
-                      {new Date(ticket.submittedAt).toLocaleString('en-CA', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                      <span style={{ marginLeft: '8px', color: T.success, fontWeight: 500 }}>✓ Sent</span>
-                    </div>
+            <h2 style={{ fontSize: 'var(--text-md)', fontWeight: 500, color: 'var(--text)', margin: '0 0 4px' }}>Your tickets</h2>
+            {ticketsLoading ? (
+              <><SkeletonTaskRow /><SkeletonTaskRow /></>
+            ) : tickets.length === 0 ? (
+              <EmptyState compact icon={EmptyIcons.doc} title="No tickets yet" message="Tickets you send will show here with their status." />
+            ) : tickets.map(ticket => (
+              <div key={ticket.id} style={{ padding: '14px 0', borderBottom: '1px solid var(--border-subtle)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
+                  <span style={{ fontSize: 'var(--text-base)', fontWeight: 500, color: 'var(--text)', flex: 1, minWidth: '160px' }}>{ticket.title}</span>
+                  <TicketStatusPill status={ticket.status} />
+                </div>
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)' }}>
+                  {categoryLabel(ticket.category)} · {urgencyLabel(ticket.urgency)} · sent {new Date(ticket.created_at).toLocaleString('en-CA', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                  {ticket.resolved_at && ` · resolved ${new Date(ticket.resolved_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })}`}
+                </div>
+                {ticket.admin_notes && (
+                  <div style={{ marginTop: '8px', fontSize: 'var(--text-sm)', color: T.text, background: T.surfaceSunken, border: `1px solid ${T.borderSubtle}`, borderRadius: T.radiusSm, padding: '8px 10px', whiteSpace: 'pre-wrap' }}>
+                    <span style={{ fontWeight: 500 }}>Response:</span> {ticket.admin_notes}
                   </div>
-                ))}
-              </>
-            )}
-          </div>
-        )}
-
-        {activeTab === 'client-packages' && (
-          <div className="il-tab-content">
-            <div style={{ border: `1px solid ${T.border}`, borderRadius: T.radiusLg, padding: '24px', background: T.surface, maxWidth: '520px', boxShadow: T.shadowSm }}>
-              <div style={{ ...T.type.h2, marginBottom: '8px' }}>Client onboarding packages</div>
-              <p style={{ ...T.type.body, color: T.muted, margin: '0 0 20px' }}>
-                Send a new client company their contract, health &amp; safety questionnaire, and
-                staffing request form — then track what they've filled in and signed. This opens
-                the client portal in a new tab; you'll be signed in automatically.
-              </p>
-              <Button busy={portalOpening} busyLabel="Opening…"
-                onClick={async () => {
-                  if (portalOpening) return
-                  setPortalOpening(true)
-                  try {
-                    await openClientPortal()
-                    logAudit('client_portal_opened', 'client_portal', null, null)
-                  } catch (err) {
-                    showToast(err.message || 'Could not open the client portal.', 'error')
-                  } finally {
-                    setPortalOpening(false)
-                  }
-                }}
-              >
-                Open client portal
-              </Button>
-            </div>
+                )}
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -1222,7 +1184,7 @@ ${overlapList ? `<p><strong>Others approved off during this period:</strong><br/
       {confirmCancelReq && (
         <ConfirmModal
           title="Cancel approved time off?"
-          message={`This will remove ${confirmCancelReq.business_days} day(s) from your used balance. This can't be undone.`}
+          message={`Your ${fmtDateRange(confirmCancelReq.start_date, confirmCancelReq.end_date)} time off will be cancelled${countsAgainstBalance(confirmCancelReq.type) ? ` and ${formatDays(confirmCancelReq.business_days)} go back into your balance` : ''}. HR will be told. To take it after all, you'd send a new request.`}
           confirmLabel="Yes, cancel it"
           confirmDanger
           onConfirm={async () => {

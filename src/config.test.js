@@ -1,7 +1,7 @@
 import { pathToPage, pageToPath, planPath, parseInstanceId, ROUTES, brandInfo, brandName } from './config'
 
 test('pageToPath and pathToPage round-trip for known pages', () => {
-  const pages = ['dashboard', 'new-onboarding-select', 'templates', 'documents', 'roles', 'history', 'time-off', 'super-admin-users']
+  const pages = ['dashboard', 'new-onboarding-select', 'templates', 'documents', 'roles', 'history', 'time-off', 'tech-support', 'super-admin-users']
   pages.forEach(page => {
     expect(pathToPage(pageToPath(page))).toBe(page)
   })
