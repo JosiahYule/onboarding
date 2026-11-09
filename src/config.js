@@ -80,8 +80,14 @@ export function getCurrentYear() {
 // flag to true is all it takes to enable the corresponding UI.
 export const FEATURES = {
   employeeTimeOff: true,
+  // Keep time-off mail paused until the Microsoft-flow cutover is explicitly authorized.
+  // This does not control onboarding or tech-support mail.
+  timeOffEmails: false,
   techSupport: true,
 }
+
+// The portal launches in December; leave recorded here starts in January.
+export const TIME_OFF_START_DATE = '2027-01-01'
 
 export const ROUTES = {
   DASHBOARD: '/dashboard',

@@ -13,7 +13,7 @@ import { TYPE_LABELS, StatusPill, TypeIcon, fmtDate, fmtDateRange } from '../uti
 import { countsAgainstBalance, balanceBucket, BUCKETS, summarizeYear, remainingIfApproved, yearSplitOf, findOverlap, formatDays, workFromWhereverHint } from '../utils/timeOffMath'
 import { parseImportList } from '../utils/importList'
 import { escapeHtml } from '../utils/escapeHtml'
-import { sendEmail, appLink } from '../utils/emailNotify'
+import { sendTimeOffEmail, appLink } from '../utils/emailNotify'
 import { formatDate } from '../utils/dates'
 import { T } from '../ui/theme'
 import PageHeader from '../ui/PageHeader'
@@ -370,7 +370,7 @@ ${extra}${appLink('/', 'See it in your portal')}`
     logAudit('time_off_approved', 'time_off_request', req.id, { employee_id: req.employee_id, days: approved?.business_days ?? req.business_days, type: req.type })
 
     const emailed = req.employee?.email
-      ? await sendEmail({ to: req.employee.email, subject: 'Your time off request has been approved', html: decisionEmail({ ...req, ...(approved || {}) }, 'approved', notes, '<p>Enjoy your time off!</p>') })
+      ? await sendTimeOffEmail({ to: req.employee.email, subject: 'Your time off request has been approved', html: decisionEmail({ ...req, ...(approved || {}) }, 'approved', notes, '<p>Enjoy your time off!</p>') })
       : null
     showToast(emailed === false ? 'Approved, but the email to the employee failed to send.' : 'Request approved.', emailed === false ? 'warning' : 'success')
     setReviewingId(null)
@@ -387,7 +387,7 @@ ${extra}${appLink('/', 'See it in your portal')}`
     logAudit('time_off_denied', 'time_off_request', req.id, { employee_id: req.employee_id, days: req.business_days, type: req.type })
 
     const emailed = req.employee?.email
-      ? await sendEmail({ to: req.employee.email, subject: 'Your time off request has been denied', html: decisionEmail(req, 'denied', notes, '<p>Please reach out to HR if you have questions.</p>') })
+      ? await sendTimeOffEmail({ to: req.employee.email, subject: 'Your time off request has been denied', html: decisionEmail(req, 'denied', notes, '<p>Please reach out to HR if you have questions.</p>') })
       : null
     showToast(emailed === false ? 'Denied, but the email to the employee failed to send.' : 'Request denied.', emailed === false ? 'warning' : 'success')
     setReviewingId(null)
@@ -403,7 +403,7 @@ ${extra}${appLink('/', 'See it in your portal')}`
     const bucket = balanceBucket(req.type)
     const refund = bucket && req.status === TIME_OFF_STATUS.APPROVED ? `<p>${formatDays(req.business_days)} have gone back into your ${BUCKETS[bucket].short}.</p>` : ''
     const emailed = req.employee?.email
-      ? await sendEmail({ to: req.employee.email, subject: 'Your time off has been cancelled', html: decisionEmail(req, 'cancelled by HR', '', refund) })
+      ? await sendTimeOffEmail({ to: req.employee.email, subject: 'Your time off has been cancelled', html: decisionEmail(req, 'cancelled by HR', '', refund) })
       : null
     showToast(emailed === false ? 'Cancelled, but the email to the employee failed to send.' : 'Time off cancelled.', emailed === false ? 'warning' : 'success')
     setConfirmCancel(null)
@@ -588,6 +588,7 @@ ${extra}${appLink('/', 'See it in your portal')}`
   // What the employee told us, and who decided.
   function detailsLine(req) {
     const bits = []
+    if (req.direct_manager_name) bits.push(['Direct manager', req.direct_manager_name])
     const wfw = req.status === TIME_OFF_STATUS.PENDING && workFromWhereverHint(req.type, req.start_date, req.end_date, req.day_portion || 'full')
     if (wfw) bits.push(['Heads up', 'Not one full Monday to Friday week', true])
     if (req.flexibility) bits.push(['Flexibility', `${FLEX_LABELS[req.flexibility] || req.flexibility}${req.flexibility_note ? `: ${req.flexibility_note}` : ''}`])

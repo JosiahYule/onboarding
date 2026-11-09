@@ -101,7 +101,9 @@ Employees request time off from the **Time off** tab of their portal; HR reviews
 - **Year end:** on the Balances tab, pick next year and use **Set up 2027 from 2026**. It copies entitlements and carries unused days over up to a limit you set. It's safe to re-run: do it in December so January can be booked, then again in early January to settle carry-over.
 - **Holidays that move** (Heritage Day, Good Friday, Natal Day, Labour Day, Thanksgiving) must be added for each year; only tick "repeats" for fixed dates.
 
-Requests email HR and the employee's own manager (found with `get_my_manager_email()`, since employees can't read other employee records). Decisions email the employee.
+The portal launches **December 1, 2026** and records employee leave from **January 1, 2027**. Employees select their direct manager on each request, using the same company-specific choices as the existing Microsoft Forms. The selected manager and their name are saved on the request; changing the choice does not change the employee's profile manager.
+
+**Time-off emails are paused** (`FEATURES.timeOffEmails = false`), including request, cancellation and decision notices. The Microsoft Forms and Power Automate flows remain untouched. Routing preparation resolves HR plus the manager saved on the request, but does not activate a connection to the Microsoft flow. See [`docs/time-off-launch.md`](docs/time-off-launch.md) before the eventual cutover. Onboarding and tech-support mail remain independent.
 
 ### Who's off this week
 
