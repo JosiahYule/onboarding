@@ -188,6 +188,7 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
   const [calMonth, setCalMonth] = useState(new Date().getMonth())
   // Requests
   const [noteOpen, setNoteOpen] = useState({})
+  const [detailsOpen, setDetailsOpen] = useState({})
   const [filterStatus, setFilterStatus] = useState('all')
   const [filterEmployee, setFilterEmployee] = useState('')
   const [decidedLimit, setDecidedLimit] = useState(20)
@@ -670,12 +671,16 @@ ${extra}${appLink('/', 'See it in your portal')}`
   }
 
   // A request that's been decided: one quiet line, and Cancel while approved
-  // time off is still ahead.
+  // time off is still ahead. What the employee wrote (note, flexibility,
+  // volunteering) stays one click away under "Details".
   function renderDecidedRow(req) {
     const verb = req.status === TIME_OFF_STATUS.APPROVED ? 'Approved' : req.status === TIME_OFF_STATUS.DENIED ? 'Denied' : null
     const by = verb && req.reviewer?.full_name ? `${verb} by ${req.reviewer.full_name.split(' ')[0]}` : null
+    const details = detailsLine(req)
+    const open = Boolean(detailsOpen[req.id])
     return (
-      <div key={req.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', borderBottom: `1px solid ${T.borderSubtle}` }}>
+      <div key={req.id} style={{ borderBottom: `1px solid ${T.borderSubtle}`, background: open ? T.surfaceSunken : 'transparent' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px' }}>
         <Avatar name={req.employee?.full_name} colorKey={req.employee?.email} size={28} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 500, color: T.text, fontSize: 'var(--text-base)' }}>{req.employee?.full_name || '?'}</div>
@@ -685,8 +690,17 @@ ${extra}${appLink('/', 'See it in your portal')}`
           </div>
           {isMobile && <div style={{ marginTop: '6px' }}><StatusPill status={req.status} /></div>}
         </div>
+        {details && (
+          <button type="button" className="il-link-subtle" aria-expanded={open}
+            onClick={() => setDetailsOpen(prev => ({ ...prev, [req.id]: !prev[req.id] }))}
+            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit', fontSize: 'var(--text-sm)', color: T.brand, flexShrink: 0 }}>
+            {open ? 'Hide details' : 'Details'}
+          </button>
+        )}
         {!isMobile && <StatusPill status={req.status} />}
         <div style={{ width: isMobile ? 'auto' : '64px', textAlign: 'right' }}>{canHrCancel(req) && cancelButton(req)}</div>
+      </div>
+      {open && details && <div style={{ padding: isMobile ? '0 16px 12px' : '0 16px 12px 56px' }}>{details}</div>}
       </div>
     )
   }
