@@ -32,6 +32,7 @@ import ProgressRing from '../ui/ProgressRing'
 import AnimatedNumber from '../ui/AnimatedNumber'
 import Avatar from '../ui/Avatar'
 import { BrandLockup } from '../ui/Brand'
+import TimeOffBalanceCard from '../components/TimeOffBalanceCard'
 
 const BASE_STYLES = {
   app: { minHeight: '100vh', background: 'transparent', fontFamily: T.font, color: T.text },
@@ -48,9 +49,6 @@ const BASE_STYLES = {
   subtaskName: (checked) => ({ fontSize: 'var(--text-base)', color: checked ? T.subtle : T.muted, textDecoration: checked ? 'line-through' : 'none', flex: 1 }),
   chevron: (open) => ({ fontSize: 'var(--text-xs)', color: T.subtle, transform: open ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }),
   subtaskCount: { fontSize: 'var(--text-xs)', color: T.subtle },
-  balStat: { textAlign: 'center' },
-  balNum: (warn) => ({ fontSize: 'var(--text-2xl)', fontWeight: 700, color: warn ? T.danger : T.text, letterSpacing: '-0.8px', fontVariantNumeric: 'tabular-nums' }),
-  balLabel: { fontSize: 'var(--text-xs)', color: T.subtle, marginTop: '4px', fontWeight: 500, letterSpacing: '0.1px' },
   fieldLabel: { fontSize: 'var(--text-sm)', color: T.muted, marginBottom: '6px', display: 'block', fontWeight: 500 },
   fieldInput: { width: '100%', minWidth: 0, background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radiusMd, padding: '9px 12px', fontSize: 'var(--text-base)', color: T.text, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box', WebkitAppearance: 'none', appearance: 'none' },
   torRow: { display: 'flex', alignItems: 'center', gap: '12px', padding: '13px 0', borderBottom: '1px solid var(--border-subtle)', flexWrap: 'wrap' },
@@ -598,8 +596,6 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
     name: { fontFamily: T.fontHeading, fontSize: isMobile ? 'var(--text-xl)' : 'var(--text-2xl)', fontWeight: 600, letterSpacing: '-0.01em', marginBottom: '4px' },
     progressWrap: { marginTop: '20px', marginBottom: isMobile ? '20px' : '32px' },
     content: { padding: isMobile ? '20px 16px' : '28px 40px', maxWidth: isMobile ? 'none' : '720px', margin: '0 auto' },
-    balCard: { background: T.surface, border: '1px solid var(--border-card)', borderRadius: T.radiusLg, padding: isMobile ? '16px' : '22px', marginBottom: '24px' },
-    balGrid: { display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: isMobile ? '12px' : '16px' },
     formCard: { background: T.surface, border: '1px solid var(--border-card)', borderRadius: T.radiusLg, padding: isMobile ? '16px' : '22px', marginBottom: '24px' },
   }
 
@@ -918,53 +914,8 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
                 {/* Balances. Hidden until HR sets one up, unless there's
                     another year to switch to. */}
                 {(hasShownBalance || yearOptions.length > 1) && (
-                <section style={styles.balCard} aria-labelledby="il-bal-title">
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
-                    <h2 id="il-bal-title" style={{ margin: 0, fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--subtle)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      {yearOptions.length > 1 ? 'Your time off' : `Your ${shownYear} time off`}
-                    </h2>
-                    {yearOptions.length > 1 && (
-                      <Segmented size="sm" label="Balance year" value={shownYear} onChange={setBalanceYear}
-                        options={yearOptions.map(y => ({ value: y, label: String(y) }))} />
-                    )}
-                  </div>
-                  {!hasShownBalance ? (
-                    <div style={{ fontSize: 'var(--text-base)', color: 'var(--muted)', lineHeight: 1.6 }}>
-                      No {shownYear} balance yet.
-                    </div>
-                  ) : summaries.filter(sum => sum.entitlement > 0 || sum.used > 0 || sum.pending > 0 || sum.bucket === 'vacation').map((sum, i) => (
-                    <div key={sum.bucket} style={i > 0 ? { marginTop: '18px', paddingTop: '18px', borderTop: '1px solid var(--border-subtle)' } : undefined}>
-                      <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: T.text, marginBottom: '12px' }}>{BUCKETS[sum.bucket].label}</div>
-                      <div style={styles.balGrid}>
-                        <div style={styles.balStat}>
-                          <div style={styles.balNum(false)}>{formatDays(sum.available).slice(0, -1)}</div>
-                          <div style={styles.balLabel}>Available</div>
-                        </div>
-                        <div style={styles.balStat}>
-                          <div style={styles.balNum(false)}>{formatDays(sum.used).slice(0, -1)}</div>
-                          <div style={styles.balLabel}>Used</div>
-                        </div>
-                        <div style={styles.balStat}>
-                          <div style={{ ...styles.balNum(false), color: sum.pending > 0 ? T.warning : T.text }}>{formatDays(sum.pending).slice(0, -1)}</div>
-                          <div style={styles.balLabel}>Pending</div>
-                        </div>
-                        <div style={styles.balStat}>
-                          <div style={{ ...styles.balNum(sum.remaining < 0), color: sum.remaining < 0 ? T.danger : T.brand }}>{formatDays(sum.remaining).slice(0, -1)}</div>
-                          <div style={{ ...styles.balLabel, color: sum.remaining < 0 ? T.danger : T.brand }}>Remaining</div>
-                          {sum.remaining < 0 && <div style={{ fontSize: 'var(--text-xs)', color: T.danger, marginTop: '2px' }}>Over limit</div>}
-                        </div>
-                      </div>
-                      {sum.available > 0 && (
-                        <div style={{ marginTop: '14px' }}>
-                          <div style={{ height: '5px', borderRadius: '3px', background: 'var(--border-subtle)', overflow: 'hidden', display: 'flex' }}>
-                            {sum.used > 0 && <div style={{ width: `${Math.min(100, (sum.used / sum.available) * 100)}%`, background: 'var(--text)', transition: 'width 0.3s ease' }} />}
-                            {sum.pending > 0 && <div style={{ width: `${Math.max(0, Math.min(100 - (sum.used / sum.available) * 100, (sum.pending / sum.available) * 100))}%`, background: T.warning, transition: 'width 0.3s ease' }} />}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </section>
+                <TimeOffBalanceCard summaries={summaries} year={shownYear} years={yearOptions}
+                  onYearChange={setBalanceYear} hasBalance={hasShownBalance} isMobile={isMobile} />
                 )}
 
                 {/* Request form */}
