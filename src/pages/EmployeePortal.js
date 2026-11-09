@@ -31,6 +31,7 @@ import ThemeToggle from '../ui/ThemeToggle'
 import ProgressRing from '../ui/ProgressRing'
 import AnimatedNumber from '../ui/AnimatedNumber'
 import Avatar from '../ui/Avatar'
+import { BrandLockup } from '../ui/Brand'
 
 const BASE_STYLES = {
   app: { minHeight: '100vh', background: 'transparent', fontFamily: T.font, color: T.text },
@@ -584,7 +585,7 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
   if (loading) return (
     <div style={styles.app}>
       <div className="il-header" data-topbar="true" style={styles.topbar}>
-        <div style={styles.logo}>Integrated Launch</div>
+        <BrandLockup size={isMobile ? 22 : 26} sub="Integrated Launch" />
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           {onSwitchToAdmin && (
             <button onClick={onSwitchToAdmin} style={{ fontSize: 'var(--text-sm)', color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
@@ -641,7 +642,7 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
   return (
     <div style={styles.app}>
       <div className="il-header" data-topbar="true" style={styles.topbar}>
-        <div style={styles.logo}>Integrated Launch</div>
+        <BrandLockup size={isMobile ? 22 : 26} sub="Integrated Launch" />
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           {onSwitchToAdmin && (
             <button onClick={onSwitchToAdmin} style={{ fontSize: 'var(--text-sm)', color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
@@ -691,7 +692,8 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
         )}
       </div>
 
-      <div style={{ maxWidth: isMobile ? 'none' : '720px', margin: '0 auto', padding: isMobile ? '0 16px' : '0 40px', borderBottom: `1px solid ${T.border}` }}>
+      <div style={{ maxWidth: isMobile ? 'none' : '720px', margin: '0 auto', padding: isMobile ? '0 16px' : '0 40px' }}>
+        <div style={{ borderBottom: `1px solid ${T.border}` }}>
         <Tabs
           label="Your portal"
           value={activeTab}
@@ -707,6 +709,7 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
             { id: 'technical-tickets', label: 'Tech support', disabled: !FEATURES.techSupport, badge: FEATURES.techSupport ? null : 'Soon' },
           ].filter(Boolean)}
         />
+        </div>
       </div>
 
       <div style={styles.content}>
@@ -941,7 +944,7 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
 
                 {/* Request form */}
                 <section style={styles.formCard} aria-labelledby="il-tor-title">
-                  <h2 id="il-tor-title" style={{ margin: '0 0 20px', fontSize: 'var(--text-md)', fontWeight: 500, color: 'var(--text)' }}>Request time off</h2>
+                  <h2 id="il-tor-title" className="il-section-title" style={{ marginBottom: '20px' }}>Request time off</h2>
 
                   <div style={{ marginBottom: '20px' }}>
                     <span style={styles.fieldLabel}>Duration</span>
@@ -980,12 +983,12 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
                   {/* Type of leave */}
                   <div style={{ marginBottom: '20px' }}>
                     <span id="il-tor-type" style={styles.fieldLabel}>Type of leave</span>
-                    <div role="radiogroup" aria-labelledby="il-tor-type" style={{ border: `1px solid ${T.border}`, borderRadius: T.radiusMd, overflow: 'hidden' }}>
+                    <div role="radiogroup" aria-labelledby="il-tor-type" style={{ display: 'grid', gap: '2px' }}>
                       {TYPE_OPTIONS.map((o, i) => {
                         const active = torType === o.value
                         return (
                           <label key={o.value} className="il-row"
-                            style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '11px 14px', cursor: 'pointer', background: active ? T.brandLight : 'transparent', borderTop: i > 0 ? `1px solid ${T.borderSubtle}` : 'none' }}>
+                            style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', cursor: 'pointer', borderRadius: T.radiusMd, background: active ? T.brandLight : 'transparent', boxShadow: active ? `inset 0 0 0 1px ${T.brand}` : 'none' }}>
                             <input type="radio" name="Type of leave" value={o.value} checked={active} onChange={() => setTorType(o.value)}
                               style={{ width: '16px', height: '16px', margin: 0, accentColor: 'var(--brand)', cursor: 'pointer' }} />
                             <span style={{ flex: 1, fontSize: 'var(--text-base)', color: T.text, fontWeight: active ? 500 : 400 }}>{o.label}</span>
@@ -1017,12 +1020,12 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
                   <div style={{ marginBottom: '20px' }}>
                     <span id="il-tor-flex" style={styles.fieldLabel}>How flexible are these dates? <span aria-hidden="true" style={{ color: T.danger }}>*</span></span>
                     <div style={{ fontSize: 'var(--text-xs)', color: 'var(--subtle)', marginBottom: '8px' }}>Helps HR if a busy period or someone else's leave clashes with yours.</div>
-                    <div role="radiogroup" aria-labelledby="il-tor-flex" style={{ border: `1px solid ${T.border}`, borderRadius: T.radiusMd, overflow: 'hidden' }}>
+                    <div role="radiogroup" aria-labelledby="il-tor-flex" style={{ display: 'grid', gap: '2px' }}>
                       {FLEXIBILITY_OPTIONS.map((o, i) => {
                         const active = torFlexibility === o.value
                         return (
                           <label key={o.value} className="il-row"
-                            style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '11px 14px', cursor: 'pointer', background: active ? T.brandLight : 'transparent', borderTop: i > 0 ? `1px solid ${T.borderSubtle}` : 'none' }}>
+                            style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', cursor: 'pointer', borderRadius: T.radiusMd, background: active ? T.brandLight : 'transparent', boxShadow: active ? `inset 0 0 0 1px ${T.brand}` : 'none' }}>
                             <input type="radio" name="Flexibility" value={o.value} checked={active} onChange={() => setTorFlexibility(o.value)}
                               style={{ width: '16px', height: '16px', margin: 0, accentColor: 'var(--brand)', cursor: 'pointer' }} />
                             <span style={{ fontSize: 'var(--text-base)', color: T.text, fontWeight: active ? 500 : 400 }}>{o.label}</span>
@@ -1070,7 +1073,7 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
                 ) : (
                   [['Upcoming and pending', upcomingRequests], ['Past', pastRequests]].map(([heading, list]) => list.length > 0 && (
                     <section key={heading} style={{ marginBottom: '24px' }}>
-                      <h2 style={{ fontSize: 'var(--text-md)', fontWeight: 500, color: 'var(--text)', margin: '0 0 4px' }}>{heading}</h2>
+                      <h2 className="il-section-title" style={{ marginBottom: '4px' }}>{heading}</h2>
                       {list.map(req => {
                         const canCancel = employeeCanCancel(req, TODAY)
                         const startedApproved = req.status === TIME_OFF_STATUS.APPROVED && !canCancel && req.end_date >= TODAY
@@ -1117,7 +1120,7 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
         {activeTab === 'technical-tickets' && (
           <div className="il-tab-content">
             <section style={styles.formCard} aria-labelledby="il-ticket-title">
-              <h2 id="il-ticket-title" style={{ margin: '0 0 6px', fontSize: 'var(--text-md)', fontWeight: 500, color: 'var(--text)' }}>Get tech help</h2>
+              <h2 id="il-ticket-title" className="il-section-title" style={{ marginBottom: '6px' }}>Get tech help</h2>
               <p style={{ margin: '0 0 20px', fontSize: 'var(--text-sm)', color: T.muted, lineHeight: 1.55 }}>
                 Tell us what's wrong and it goes straight to whoever handles tech support. You'll see their updates on your tickets below.
                 {techEmail && <> If it can't wait, you can also email <a href={`mailto:${techEmail}`} style={{ color: T.brand }}>{techEmail}</a>.</>}
@@ -1152,7 +1155,7 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
               <Button disabled={!ticketTitle.trim() || !ticketDescription.trim()} busy={ticketSubmitting} busyLabel="Sending…" onClick={submitTicket}>Send ticket</Button>
             </section>
 
-            <h2 style={{ fontSize: 'var(--text-md)', fontWeight: 500, color: 'var(--text)', margin: '0 0 4px' }}>Your tickets</h2>
+            <h2 className="il-section-title" style={{ marginBottom: '4px' }}>Your tickets</h2>
             {ticketsLoading ? (
               <><SkeletonTaskRow /><SkeletonTaskRow /></>
             ) : tickets.length === 0 ? (

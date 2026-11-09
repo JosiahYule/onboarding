@@ -69,7 +69,10 @@ export default function Button({
         letterSpacing: 0,
         lineHeight: 1.3,
         cursor: isDisabled ? 'default' : 'pointer',
-        opacity: isDisabled && !busy ? 0.45 : 1,
+        // A faded blue reads as broken, so a disabled primary button goes
+        // neutral grey instead; other variants just dim.
+        opacity: isDisabled && !busy && variant !== 'primary' ? 0.5 : 1,
+        ...(isDisabled && !busy && variant === 'primary' ? { background: T.surfaceSunken, color: T.subtle, border: `1px solid ${T.border}` } : {}),
         width: fullWidth ? '100%' : undefined,
         display: 'inline-flex',
         alignItems: 'center',
