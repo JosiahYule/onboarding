@@ -8,11 +8,11 @@ import { handleSupabaseError } from '../utils/handleError'
 import { getTechSupportEmail } from '../utils/getHrEmail'
 import { logAudit } from '../utils/auditLog'
 import { useWindowSize } from '../hooks/useWindowSize'
-import { SCHEDULE_BUCKETS, getCurrentYear, getToday, FEATURES, ONBOARDING_STATUS, TIME_OFF_STATUS, ROUTES, brandName } from '../config'
+import { SCHEDULE_BUCKETS, getCurrentYear, getToday, FEATURES, TIME_OFF_START_DATE, ONBOARDING_STATUS, TIME_OFF_STATUS, ROUTES, brandName } from '../config'
 import { normalizeTask, groupParentsByBucket, bucketDateHint, isBucketUpcoming } from '../utils/schedule'
 import { TYPE_LABELS, StatusPill, TypeIcon, fmtDateRange } from '../utils/timeOffShared'
 import { escapeHtml, escapeHtmlMultiline } from '../utils/escapeHtml'
-import { notifyHrAndManager, sendEmail, appLink } from '../utils/emailNotify'
+import { notifyTimeOffHrAndManager, sendEmail, appLink } from '../utils/emailNotify'
 import { countsAgainstBalance, balanceBucket, balanceUseLabel, BUCKETS, summarizeYear, remainingIfApproved, findOverlap, employeeCanCancel, relevantYears, splitTotal, formatDays, workFromWhereverHint } from '../utils/timeOffMath'
 import { TICKET_CATEGORIES, TICKET_URGENCY, TicketStatusPill, categoryLabel, urgencyLabel } from '../utils/ticketShared'
 import { computeProgress, isParentComplete } from '../utils/taskProgress'
@@ -90,13 +90,18 @@ export default function EmployeePortal({ session, userProfile, onSwitchToAdmin }
   const celebrationTimer = useRef(null)
   // Recomputed each render so a long-lived tab doesn't stick to last year.
   const CURRENT_YEAR = getCurrentYear()
+  const TIME_OFF_YEAR = Math.max(CURRENT_YEAR, Number(TIME_OFF_START_DATE.slice(0, 4)))
 
   // Time off state
   const [timeOffBalances, setTimeOffBalances] = useState([])
   const [timeOffRequests, setTimeOffRequests] = useState([])
   const [timeOffLoading, setTimeOffLoading] = useState(false)
   const [timeOffFetched, setTimeOffFetched] = useState(false)
-  const [balanceYear, setBalanceYear] = useState(CURRENT_YEAR)
+  const [balanceYear, setBalanceYear] = useState(TIME_OFF_YEAR)
+  const [torManagers, setTorManagers] = useState([])
+  const [torManagersLoading, setTorManagersLoading] = useState(true)
+  const [torManagersError, setTorManagersError] = useState(false)
+  const [torManagerId, setTorManagerId] = useState('')
   const [torStartDate, setTorStartDate] = useState('')
   const [torEndDate, setTorEndDate] = useState('')
   const [torType, setTorType] = useState('personal_vacation')
@@ -211,13 +216,21 @@ export default function EmployeePortal({ session, userProfile, onSwitchToAdmin }
 
   async function fetchTimeOffData() {
     if (!timeOffFetched) setTimeOffLoading(true)
-    const [{ data: bals, error: balErr }, { data: reqs, error: reqsErr }] = await Promise.all([
+    setTorManagersLoading(true)
+    const [{ data: bals, error: balErr }, { data: reqs, error: reqsErr }, managerResult] = await Promise.all([
       supabase.from('time_off_balances').select('*').eq('employee_id', userProfile.employee_id),
       supabase.from('time_off_requests').select('*').eq('employee_id', userProfile.employee_id).order('start_date', { ascending: false }),
+      supabase.rpc('get_time_off_managers').then(r => r, () => ({ data: null, error: true })),
     ])
     if (balErr || reqsErr) showToast(handleSupabaseError(balErr || reqsErr, 'Failed to load your time off.'), 'error')
     setTimeOffBalances(bals || [])
     setTimeOffRequests(reqs || [])
+    const managers = managerResult.data || []
+    setTorManagers(managers)
+    setTorManagersError(Boolean(managerResult.error))
+    setTorManagersLoading(false)
+    setTorManagerId(current => managers.some(m => m.manager_id === current)
+      ? current : managers.find(m => m.is_default)?.manager_id || '')
     setTimeOffFetched(true)
     setTimeOffLoading(false)
   }
@@ -275,10 +288,15 @@ export default function EmployeePortal({ session, userProfile, onSwitchToAdmin }
   )
 
   async function submitTimeOffRequest({ confirmed = false } = {}) {
+    if (torSubmitting) return
     const isHalfDay = torDayPortion !== 'full'
     const endDate = isHalfDay ? torStartDate : torEndDate
     if (!torStartDate || !endDate) { showToast('Please choose your dates.', 'error'); return }
     if (endDate < torStartDate) { showToast('End date must be on or after start date.', 'error'); return }
+    if (torStartDate < TIME_OFF_START_DATE) { showToast('Please choose time off on or after January 1, 2027.', 'error'); return }
+    if (torManagersLoading || torManagersError || !torManagers.some(m => m.manager_id === torManagerId)) {
+      showToast('Please select your direct manager.', 'error'); return
+    }
     if (!torFlexibility) { showToast('Please select a flexibility option.', 'error'); return }
     if (torFlexibility === 'other' && !torFlexibilityNote.trim()) { showToast('Please describe how flexible these dates are.', 'error'); return }
     if (torType === 'volunteer' && !torVolunteeringWith.trim()) { showToast('Please say who you will be volunteering with.', 'error'); return }
@@ -298,6 +316,7 @@ export default function EmployeePortal({ session, userProfile, onSwitchToAdmin }
       .from('time_off_requests')
       .insert({
         employee_id: userProfile.employee_id,
+        direct_manager_id: torManagerId,
         start_date: torStartDate,
         end_date: endDate,
         // The database recounts this on insert; sent so the row is never empty.
@@ -325,7 +344,7 @@ export default function EmployeePortal({ session, userProfile, onSwitchToAdmin }
     setTimeOffRequests(nextRequests)
     resetTimeOffForm()
     setTorSubmitting(false)
-    logAudit('time_off_requested', 'time_off_request', newReq.id, { type: newReq.type, days: newReq.business_days, start_date: newReq.start_date, end_date: newReq.end_date })
+    logAudit('time_off_requested', 'time_off_request', newReq.id, { type: newReq.type, days: newReq.business_days, start_date: newReq.start_date, end_date: newReq.end_date, direct_manager_id: newReq.direct_manager_id })
 
     const employeeName = instance?.employees?.full_name || employee?.full_name || 'Employee'
     const bucket = balanceBucket(newReq.type)
@@ -341,14 +360,16 @@ export default function EmployeePortal({ session, userProfile, onSwitchToAdmin }
 <p>
   <strong>Dates:</strong> ${fmtDateRange(newReq.start_date, newReq.end_date)}<br/>
   <strong>Type:</strong> ${escapeHtml(TYPE_LABELS[newReq.type] || newReq.type)}<br/>
+  <strong>Direct manager:</strong> ${escapeHtml(newReq.direct_manager_name || '')}<br/>
   <strong>Business days:</strong> ${formatDays(newReq.business_days)}${dayPortionLabel}<br/>
   <strong>Flexibility:</strong> ${escapeHtml(flexibilityLabel)}${flexibilityNote ? `: ${escapeHtml(flexibilityNote)}` : ''}<br/>
   <strong>Balance if approved:</strong> ${escapeHtml(balanceLine)}${wfwNote ? '<br/><strong>Heads up:</strong> not one full Monday to Friday week' : ''}${volunteeringWith ? `<br/><strong>Volunteering with:</strong> ${escapeHtml(volunteeringWith)}` : ''}${notesVal ? `<br/><strong>Notes:</strong> ${escapeHtmlMultiline(notesVal)}` : ''}
 </p>
 ${appLink(ROUTES.TIME_OFF, 'Review it in Integrated Launch')}`
 
-    const sent = await notifyHrAndManager({ subject: `Time off request: ${employeeName}`, html })
+    const sent = await notifyTimeOffHrAndManager({ requestId: newReq.id, subject: `Time off request: ${employeeName}`, html })
     if (sent.hr === false) showToast('Request submitted, but the email to HR failed. Please let HR know directly.', 'warning')
+    else if (sent.manager === false) showToast('Request submitted, but the email to your manager failed. Please let HR know directly.', 'warning')
     else showToast(sent.hr ? 'Request submitted. HR has been notified.' : 'Request submitted.')
   }
 
@@ -371,7 +392,7 @@ ${appLink(ROUTES.TIME_OFF, 'Review it in Integrated Launch')}`
   <strong>Was:</strong> ${escapeHtml(req.status)}
 </p>
 ${appLink(ROUTES.TIME_OFF, 'Open time off in Integrated Launch')}`
-    await notifyHrAndManager({ subject: `Time off cancelled: ${employeeName}`, html })
+    await notifyTimeOffHrAndManager({ requestId: req.id, subject: `Time off cancelled: ${employeeName}`, html })
 
     showToast('Request cancelled.')
     setCancellingId(null)
@@ -613,8 +634,8 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
   // ── Time off: what to show ──
   // Employees see this year, plus next year once anything is booked into it.
   const liveRequests = timeOffRequests.filter(r => r.status === TIME_OFF_STATUS.PENDING || r.status === TIME_OFF_STATUS.APPROVED)
-  const yearOptions = relevantYears(CURRENT_YEAR, { balances: timeOffBalances, requests: liveRequests }).filter(y => y >= CURRENT_YEAR)
-  const shownYear = yearOptions.includes(balanceYear) ? balanceYear : CURRENT_YEAR
+  const yearOptions = relevantYears(TIME_OFF_YEAR, { balances: timeOffBalances, requests: liveRequests }).filter(y => y >= TIME_OFF_YEAR)
+  const shownYear = yearOptions.includes(balanceYear) ? balanceYear : TIME_OFF_YEAR
   const shownBalance = balancesByYear[String(shownYear)]
   const summaries = ['vacation', 'care'].map(bucket => summarizeYear(shownBalance, timeOffRequests, shownYear, { bucket }))
   const hasShownBalance = Boolean(shownBalance)
@@ -629,6 +650,10 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
   const submitBlocker =
     !torStartDate || !torEnd ? 'Choose your dates to continue.'
     : torDatesBackwards ? 'End date must be on or after the start date.'
+    : torStartDate < TIME_OFF_START_DATE ? 'Choose time off on or after January 1, 2027.'
+    : torManagersLoading ? 'Loading direct managers…'
+    : torManagersError ? 'Reload the direct managers to continue.'
+    : !torManagers.some(m => m.manager_id === torManagerId) ? 'Select your direct manager to continue.'
     : torCalculating || torSplit === null ? 'Counting business days…'
     : torDays === 0 ? 'Those dates are all weekends or company holidays.'
     : torOverlap ? `You already have a ${torOverlap.status} request that overlaps these dates.`
@@ -946,6 +971,23 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
                 <section style={styles.formCard} aria-labelledby="il-tor-title">
                   <h2 id="il-tor-title" className="il-section-title" style={{ marginBottom: '20px' }}>Request time off</h2>
 
+                  <p style={{ margin: '-12px 0 20px', fontSize: 'var(--text-sm)', color: T.muted }}>For time off from January 1, 2027.</p>
+
+                  <div style={{ marginBottom: '20px' }}>
+                    <label htmlFor="il-tor-manager" style={styles.fieldLabel}>Direct manager <span aria-hidden="true" style={{ color: T.danger }}>*</span></label>
+                    <select id="il-tor-manager" className="il-input" required aria-describedby="il-tor-manager-hint"
+                      value={torManagerId} disabled={torManagersLoading || torManagersError || torManagers.length === 0}
+                      onChange={e => setTorManagerId(e.target.value)}>
+                      <option value="">{torManagersLoading ? 'Loading managers…' : 'Select your direct manager'}</option>
+                      {torManagers.map(m => <option key={m.manager_id} value={m.manager_id}>{m.full_name}</option>)}
+                    </select>
+                    <div id="il-tor-manager-hint" className="il-field-hint" data-tone={torManagersError ? 'error' : 'muted'} role={torManagersError ? 'alert' : undefined}>
+                      {torManagersError ? <>Couldn’t load the manager list. <button type="button" className="il-link-subtle" onClick={fetchTimeOffData}>Try again</button></>
+                        : !torManagersLoading && torManagers.length === 0 ? 'No direct managers are available. Please contact HR.'
+                        : 'Choose the person who directly manages your work. This choice is saved with your request.'}
+                    </div>
+                  </div>
+
                   <div style={{ marginBottom: '20px' }}>
                     <span style={styles.fieldLabel}>Duration</span>
                     <Segmented label="Duration" value={torDayPortion} onChange={handleDayPortionChange}
@@ -955,12 +997,12 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
                   <div style={{ display: 'grid', gridTemplateColumns: isMobile || torIsHalf ? '1fr' : '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
                     <div style={{ minWidth: 0 }}>
                       <label htmlFor="il-tor-start" style={styles.fieldLabel}>{torIsHalf ? 'Date' : 'First day off'}</label>
-                      <input id="il-tor-start" type="date" style={styles.fieldInput} value={torStartDate} onChange={e => handleStartChange(e.target.value)} />
+                      <input id="il-tor-start" type="date" min={TIME_OFF_START_DATE} style={styles.fieldInput} value={torStartDate} onChange={e => handleStartChange(e.target.value)} />
                     </div>
                     {!torIsHalf && (
                       <div style={{ minWidth: 0 }}>
                         <label htmlFor="il-tor-end" style={styles.fieldLabel}>Last day off</label>
-                        <input id="il-tor-end" type="date" style={styles.fieldInput} value={torEndDate} min={torStartDate || undefined} onChange={e => handleEndChange(e.target.value)} />
+                        <input id="il-tor-end" type="date" style={styles.fieldInput} value={torEndDate} min={torStartDate && torStartDate > TIME_OFF_START_DATE ? torStartDate : TIME_OFF_START_DATE} onChange={e => handleEndChange(e.target.value)} />
                       </div>
                     )}
                   </div>
@@ -1089,6 +1131,7 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
                                 {req.day_portion === 'am' ? ' (morning)' : req.day_portion === 'pm' ? ' (afternoon)' : ''}
                                 {!countsAgainstBalance(req.type) && ' · not from your balance'}
                               </div>
+                              {req.direct_manager_name && <div style={{ fontSize: 'var(--text-xs)', color: T.muted, marginTop: '4px' }}>Direct manager: {req.direct_manager_name}</div>}
                               {req.review_notes && (
                                 <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)', marginTop: '4px' }}>
                                   <span style={{ fontWeight: 500 }}>HR note:</span> <span style={{ fontStyle: 'italic' }}>{req.review_notes}</span>

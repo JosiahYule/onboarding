@@ -1,6 +1,6 @@
 import { supabase } from '../supabaseClient'
-import { getHrEmail } from './getHrEmail'
 import { escapeHtml } from './escapeHtml'
+import { FEATURES } from '../config'
 
 // A link back into the app, for the bottom of notification emails.
 export function appLink(path, label) {
@@ -23,20 +23,32 @@ export async function sendEmail({ to, subject, html }) {
   }
 }
 
-// Sends the same notification to HR and to the signed-in employee's own
-// manager. Employees can't read other employee records, so the manager's
-// address comes from get_my_manager_email(), which returns only the caller's
-// manager. Resolves to { hr, manager }: true when sent, false when it failed,
-// null when there was nobody to send to.
-export async function notifyHrAndManager({ subject, html }) {
-  const [hrEmail, { data: managerEmail }] = await Promise.all([
-    getHrEmail(),
-    supabase.rpc('get_my_manager_email').then(r => r, () => ({ data: null })),
-  ])
+// Time-off email is deliberately inactive during preparation. The existing
+// Microsoft Forms / Power Automate system is not connected or changed here.
+// Before enabling this flag, complete the transport cutover documented in
+// docs/time-off-launch.md. Requests saved while paused are never replayed.
+export async function sendTimeOffEmail(payload) {
+  if (!FEATURES.timeOffEmails) return null
+  return sendEmail(payload)
+}
+
+// Resolve the recipients from the saved request, not from a client-supplied
+// address or the employee's current profile manager. The RPC checks ownership.
+export async function notifyTimeOffHrAndManager({ requestId, subject, html }) {
+  if (!FEATURES.timeOffEmails) return { hr: null, manager: null, paused: true }
+  let recipients
+  try {
+    const { data, error } = await supabase.rpc('get_time_off_request_recipients', { p_request_id: requestId })
+    if (error || !data?.hr_email || !data?.manager_email) return { hr: false, manager: false }
+    recipients = data
+  } catch {
+    return { hr: false, manager: false }
+  }
+  const { hr_email: hrEmail, manager_email: managerEmail } = recipients
   const sameAddress = hrEmail && managerEmail && hrEmail.toLowerCase() === managerEmail.toLowerCase()
   const [hr, manager] = await Promise.all([
-    hrEmail ? sendEmail({ to: hrEmail, subject, html }) : null,
-    managerEmail && !sameAddress ? sendEmail({ to: managerEmail, subject, html }) : null,
+    sendTimeOffEmail({ to: hrEmail, subject, html }),
+    !sameAddress ? sendTimeOffEmail({ to: managerEmail, subject, html }) : null,
   ])
   return { hr, manager }
 }
