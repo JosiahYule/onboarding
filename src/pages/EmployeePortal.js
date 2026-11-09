@@ -13,7 +13,7 @@ import { normalizeTask, groupParentsByBucket, bucketDateHint, isBucketUpcoming }
 import { TYPE_LABELS, StatusPill, TypeIcon, fmtDateRange } from '../utils/timeOffShared'
 import { escapeHtml, escapeHtmlMultiline } from '../utils/escapeHtml'
 import { notifyTimeOffHrAndManager, sendEmail, appLink } from '../utils/emailNotify'
-import { countsAgainstBalance, balanceBucket, balanceUseLabel, BUCKETS, summarizeYear, remainingIfApproved, findOverlap, employeeCanCancel, relevantYears, splitTotal, formatDays, workFromWhereverHint } from '../utils/timeOffMath'
+import { countsAgainstBalance, balanceBucket, BUCKETS, summarizeYear, remainingIfApproved, findOverlap, employeeCanCancel, relevantYears, splitTotal, formatDays, workFromWhereverHint } from '../utils/timeOffMath'
 import { TICKET_CATEGORIES, TICKET_URGENCY, TicketStatusPill, categoryLabel, urgencyLabel } from '../utils/ticketShared'
 import { computeProgress, isParentComplete } from '../utils/taskProgress'
 import { attachResolvedUrls } from '../utils/documentUrls'
@@ -922,8 +922,6 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
                 <section style={styles.formCard} aria-labelledby="il-tor-title">
                   <h2 id="il-tor-title" className="il-section-title" style={{ marginBottom: '20px' }}>Request time off</h2>
 
-                  <p style={{ margin: '-12px 0 20px', fontSize: 'var(--text-sm)', color: T.muted }}>For time off from January 1, 2027.</p>
-
                   <div style={{ marginBottom: '20px' }}>
                     <label htmlFor="il-tor-manager" style={styles.fieldLabel}>Direct manager <span aria-hidden="true" style={{ color: T.danger }}>*</span></label>
                     <select id="il-tor-manager" className="il-input" required
@@ -987,9 +985,6 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
                             <input type="radio" name="Type of leave" value={o.value} checked={active} onChange={() => setTorType(o.value)}
                               style={{ width: '16px', height: '16px', margin: 0, accentColor: 'var(--brand)', cursor: 'pointer' }} />
                             <span style={{ flex: 1, fontSize: 'var(--text-base)', color: T.text, fontWeight: active ? 500 : 400 }}>{o.label}</span>
-                            <span style={{ fontSize: 'var(--text-xs)', color: T.subtle, textAlign: 'right' }}>
-                              {balanceUseLabel(o.value)}
-                            </span>
                           </label>
                         )
                       })}
@@ -1014,7 +1009,6 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
                   {/* Flexibility */}
                   <div style={{ marginBottom: '20px' }}>
                     <span id="il-tor-flex" style={styles.fieldLabel}>How flexible are these dates? <span aria-hidden="true" style={{ color: T.danger }}>*</span></span>
-                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--subtle)', marginBottom: '8px' }}>Helps HR if a busy period or someone else's leave clashes with yours.</div>
                     <div role="radiogroup" aria-labelledby="il-tor-flex" style={{ display: 'grid', gap: '2px' }}>
                       {FLEXIBILITY_OPTIONS.map((o, i) => {
                         const active = torFlexibility === o.value
