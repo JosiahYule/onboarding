@@ -103,6 +103,10 @@ Employees request time off from the **Time off** tab of their portal; HR reviews
 
 Requests email HR and the employee's own manager (found with `get_my_manager_email()`, since employees can't read other employee records). Decisions email the employee.
 
+### Who's off this week
+
+The admin **Time off > Who's off** tab shows the month as a calendar and, underneath, a list for each Monday-to-Friday week of who has approved time off. **Copy for email** puts that week's list on the clipboard as a bulleted list (with a plain-text fallback), ready to paste into the weekly email to managers. It names people and days only, never the type of leave, except Work from Wherever, shown as "working remotely". Holidays that week are added at the bottom. The logic is in `src/utils/whosOff.js`.
+
 ### Tech Support
 
 Employees send tickets from the **Tech support** tab of their portal, with a category and how badly it's affecting their work. Each ticket is saved first and then emailed to the *Tech support email* in System settings, so a mail failure never loses it. Admins work the queue on the **Tech support** page (Open → In progress → Resolved); a response written there shows on the employee's ticket and is emailed to them on resolve.

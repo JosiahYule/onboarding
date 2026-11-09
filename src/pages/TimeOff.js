@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase } from '../supabaseClient'
 import Layout from '../components/Layout'
 import { SkeletonLine } from '../components/Skeleton'
@@ -24,6 +24,8 @@ import Segmented from '../ui/Segmented'
 import SearchInput from '../ui/SearchInput'
 import EmptyState, { EmptyIcons } from '../ui/EmptyState'
 import Avatar from '../ui/Avatar'
+import Menu from '../ui/Menu'
+import { weeksOfMonth, mondayOf, peopleOffInWeek, describeDays, weekTitle, weekEmail, copyRich } from '../utils/whosOff'
 import { avatarHue } from '../utils/avatarColor'
 
 // Each person's bar is drawn in their avatar colour (see avatarColor.js), so
@@ -31,9 +33,9 @@ import { avatarHue } from '../utils/avatarColor'
 // the current surface, so they read in both light and dark themes.
 function eventColors(hue, pending) {
   return {
-    background: pending ? `color-mix(in srgb, ${hue} 10%, var(--surface))` : `color-mix(in srgb, ${hue} 24%, var(--surface))`,
-    color: `color-mix(in srgb, ${hue} 70%, var(--text))`,
-    border: pending ? `1.5px dashed color-mix(in srgb, ${hue} 60%, var(--surface))` : '1px solid transparent',
+    background: pending ? `color-mix(in srgb, ${hue} 12%, var(--surface))` : `color-mix(in srgb, ${hue} 26%, var(--surface))`,
+    color: `color-mix(in srgb, ${hue} 72%, var(--text))`,
+    border: pending ? `1.5px dashed color-mix(in srgb, ${hue} 75%, var(--surface))` : '1px solid transparent',
   }
 }
 
@@ -52,10 +54,19 @@ function pad(n) { return String(n).padStart(2, '0') }
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
 const DOW_LABELS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
 
-const DATE_ROW_H = 28
-const EVENT_H = 20
-const EVENT_GAP = 3
+// Roomy enough that a month reads at a glance: each week is at least
+// DATE_ROW_H + WEEK_MIN_EVENTS_H tall, and grows when more people are off.
+const DATE_ROW_H = 34
+const EVENT_H = 24
+const EVENT_GAP = 4
 const SLOT_H = EVENT_H + EVENT_GAP
+const WEEK_MIN_EVENTS_H = 72
+
+function addDaysIso(isoDate, n) {
+  const [y, m, d] = isoDate.split('-').map(Number)
+  const dt = new Date(y, m - 1, d + n)
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`
+}
 
 const BASE_STYLES = {
   card: { background: T.surface, border: `1px solid ${T.border}`, borderRadius: T.radiusLg, boxShadow: T.shadowSm },
@@ -175,11 +186,11 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
   const [expandedEmployeeId, setExpandedEmployeeId] = useState(null)
   const [calYear, setCalYear] = useState(new Date().getFullYear())
   const [calMonth, setCalMonth] = useState(new Date().getMonth())
-  // Filter / sort
+  // Requests
+  const [noteOpen, setNoteOpen] = useState({})
   const [filterStatus, setFilterStatus] = useState('all')
   const [filterEmployee, setFilterEmployee] = useState('')
-  const [sortField, setSortField] = useState('created_at')
-  const [sortDir, setSortDir] = useState('desc')
+  const [decidedLimit, setDecidedLimit] = useState(20)
   // Balances
   const [balYear, setBalYear] = useState(getCurrentYear())
   const [balSearch, setBalSearch] = useState('')
@@ -188,6 +199,10 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
   const [bulkDays, setBulkDays] = useState('')
   const [bulkCare, setBulkCare] = useState('')
   const [bulkSaving, setBulkSaving] = useState(false)
+  const [bulkOpen, setBulkOpen] = useState(false)
+  // Opens on the year that has allowances, once, so HR isn't greeted by a
+  // column of "Not set" when only next year has been loaded.
+  const balYearChosen = useRef(false)
   const [startYearOpen, setStartYearOpen] = useState(false)
   // HR's yearly list
   const [importOpen, setImportOpen] = useState(false)
@@ -196,6 +211,7 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
   const [importing, setImporting] = useState(false)
   // Calendar
   const [calBranch, setCalBranch] = useState('')
+  const [copiedWeek, setCopiedWeek] = useState(null)
   // Logging time off on someone's behalf
   const [logForm, setLogForm] = useState(null)
   const [logSaving, setLogSaving] = useState(false)
@@ -210,6 +226,7 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
   const [deletingHolidayKey, setDeletingHolidayKey] = useState(null)
   const [holidayYear, setHolidayYear] = useState(getCurrentYear())
   const [addingYear, setAddingYear] = useState(false)
+  const [holidayFormOpen, setHolidayFormOpen] = useState(false)
   const { toast, showToast, hideToast } = useToast()
   const { isMobile } = useWindowSize()
 
@@ -257,8 +274,8 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
   }
 
   async function addHoliday() {
-    if (!newHolidayName.trim() || !newHolidayDate) { showToast('Name and date are required.', 'error'); return }
-    if (newHolidayProvinces.length === 0) { showToast('Choose at least one branch.', 'error'); return }
+    if (!newHolidayName.trim() || !newHolidayDate) { showToast('Name and date are required.', 'error'); return false }
+    if (newHolidayProvinces.length === 0) { showToast('Choose at least one branch.', 'error'); return false }
     setSavingHoliday(true)
     const base = { name: newHolidayName.trim(), date: newHolidayDate, repeats_yearly: newHolidayRepeats, kind: 'company' }
     // One row for every branch, or one per province it applies to.
@@ -266,7 +283,7 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
       ? [{ ...base, province: null }]
       : newHolidayProvinces.map(province => ({ ...base, province }))
     const { error } = await supabase.from('company_holidays').insert(rows)
-    if (error) { showToast(handleSupabaseError(error, 'Failed to add holiday.'), 'error'); setSavingHoliday(false); return }
+    if (error) { showToast(handleSupabaseError(error, 'Failed to add holiday.'), 'error'); setSavingHoliday(false); return false }
     setNewHolidayName('')
     setNewHolidayDate('')
     setNewHolidayRepeats(false)
@@ -274,6 +291,7 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
     showToast('Holiday added. Pending requests have been recounted.')
     setSavingHoliday(false)
     await fetchHolidays()
+    return true
   }
 
   async function deleteHoliday(group) {
@@ -304,6 +322,14 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
       idx[b.employee_id][String(b.year)] = b
     })
     return idx
+  }, [allBalances])
+
+  useEffect(() => {
+    if (balYearChosen.current || allBalances.length === 0) return
+    balYearChosen.current = true
+    const has = y => allBalances.some(b => Number(b.year) === y && !hasNoEntitlement(b))
+    if (!has(CURRENT_YEAR) && has(CURRENT_YEAR + 1)) setBalYear(CURRENT_YEAR + 1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once, when balances first arrive
   }, [allBalances])
 
   const requestsByEmployee = useMemo(() => {
@@ -530,79 +556,32 @@ ${extra}${appLink('/', 'See it in your portal')}`
     else setCalMonth(m => m + 1)
   }
 
-  function handleSort(field) {
-    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
-    else { setSortField(field); setSortDir('asc') }
-  }
-
   const allEmployees = [...new Map(requests.filter(r => r.employee).map(r => [r.employee_id, r.employee])).values()].sort((a, b) => a.full_name.localeCompare(b.full_name))
-
-  const displayRequests = requests
-    .filter(r => filterStatus === 'all' || r.status === filterStatus)
-    .filter(r => !filterEmployee || r.employee_id === filterEmployee)
-    .sort((a, b) => {
-      if (sortField !== 'status') {
-        if (a.status === TIME_OFF_STATUS.PENDING && b.status !== TIME_OFF_STATUS.PENDING) return -1
-        if (b.status === TIME_OFF_STATUS.PENDING && a.status !== TIME_OFF_STATUS.PENDING) return 1
-      }
-      let av = a[sortField] || ''
-      let bv = b[sortField] || ''
-      if (sortField === 'employee_name') { av = a.employee?.full_name || ''; bv = b.employee?.full_name || '' }
-      if (sortField === 'business_days') { av = Number(a.business_days) || 0; bv = Number(b.business_days) || 0 }
-      if (av < bv) return sortDir === 'asc' ? -1 : 1
-      if (av > bv) return sortDir === 'asc' ? 1 : -1
-      return 0
-    })
 
   const s = {
     ...BASE_STYLES,
     page: { padding: isMobile ? '16px 16px 40px' : '24px 40px 48px', maxWidth: '1120px' },
   }
 
-  const REQ_COLS = 'minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1.1fr) 56px 96px 120px 170px'
-  const BAL_COLS = 'minmax(0, 1.6fr) 78px 64px 70px 84px 64px 70px 64px'
+  const BAL_COLS = 'minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr) 72px'
 
   // Plain render helpers, not components: a component defined inside this one
   // is a new type on every render, so React would remount it each keystroke
-  // (the mobile review-notes field lost focus after every character).
-  function sortHeader(field, label) {
-    const active = sortField === field
-    return (
-      <button type="button" onClick={() => handleSort(field)} className="il-link-subtle"
-        aria-sort={active ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}
-        style={{ ...s.thBtn, color: active ? T.text : T.muted }}>
-        {label}
-        <span aria-hidden="true" style={{ fontSize: 'var(--text-xs)', marginLeft: '4px', color: active ? T.text : T.subtle }}>
-          {active ? (sortDir === 'asc' ? '▲' : '▼') : '⬍'}
-        </span>
-      </button>
-    )
-  }
+  // (the review-note field lost focus after every character).
 
-  function remainingText(remaining) {
-    return (
-      <span className="il-tabular" style={{ color: remaining < 0 ? T.danger : T.muted, fontWeight: remaining < 0 ? 600 : 400 }}>
-        {remaining < 0 ? `${formatDays(Math.abs(remaining))} over` : formatDays(remaining)}
+  // What approving would leave, in words: "7 vacation days left in 2027".
+  function balanceSummary(req) {
+    const bucket = balanceBucket(req.type)
+    if (!bucket) return <span>Doesn't use an allowance</span>
+    const short = BUCKETS[bucket].short
+    const n = v => formatDays(Math.abs(v)).slice(0, -1)
+    return afterApproval(req).map(a => (
+      <span key={a.year} style={!a.hasBalance ? { color: T.warning } : a.remaining < 0 ? { color: T.danger, fontWeight: 600 } : undefined}>
+        {!a.hasBalance ? `No ${a.year} allowance set`
+          : a.remaining < 0 ? `${n(a.remaining)} ${short} over in ${a.year}`
+          : `${n(a.remaining)} ${short} left in ${a.year} after this`}
       </span>
-    )
-  }
-
-  // What's left after approval, per year the request touches.
-  function afterCell(req) {
-    if (!countsAgainstBalance(req.type)) return <span style={{ color: T.subtle, fontSize: 'var(--text-xs)' }}>Not from balance</span>
-    const after = afterApproval(req)
-    if (after.length === 0) return <span style={{ color: T.subtle }}>–</span>
-    return (
-      <span style={{ display: 'inline-flex', flexDirection: 'column', gap: '1px' }}>
-        {after.map(a => (
-          <span key={a.year} style={{ fontSize: after.length > 1 ? 'var(--text-sm)' : undefined }}>
-            {after.length > 1 && <span style={{ color: T.subtle }}>{a.year}: </span>}
-            {a.hasBalance ? remainingText(a.remaining) : <span style={{ color: T.warning, fontSize: 'var(--text-xs)' }}>No {a.year} balance</span>}
-            {a.bucket === 'care' && a.hasBalance && <span style={{ color: T.subtle, fontSize: 'var(--text-xs)' }}> care</span>}
-          </span>
-        ))}
-      </span>
-    )
+    ))
   }
 
   // What the employee told us, and who decided.
@@ -613,8 +592,6 @@ ${extra}${appLink('/', 'See it in your portal')}`
     if (req.flexibility) bits.push(['Flexibility', `${FLEX_LABELS[req.flexibility] || req.flexibility}${req.flexibility_note ? `: ${req.flexibility_note}` : ''}`])
     if (req.volunteering_with) bits.push(['Volunteering with', req.volunteering_with])
     if (req.notes) bits.push(['Their note', req.notes])
-    if (req.status !== TIME_OFF_STATUS.PENDING && req.reviewer?.full_name) bits.push([req.status === TIME_OFF_STATUS.APPROVED ? 'Approved by' : 'Decided by', req.reviewer.full_name])
-    if (req.status !== TIME_OFF_STATUS.PENDING && req.review_notes) bits.push(['HR note', req.review_notes])
     if (bits.length === 0) return null
     return (
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px', fontSize: 'var(--text-sm)', color: T.muted, lineHeight: 1.45 }}>
@@ -629,73 +606,87 @@ ${extra}${appLink('/', 'See it in your portal')}`
     return req.status === TIME_OFF_STATUS.APPROVED && req.end_date >= TODAY
   }
 
-  function reviewButtons(req, compact) {
-    const busy = reviewingId === req.id
-    const size = compact ? 'xs' : 'sm'
-    return (
-      <div style={{ display: 'flex', gap: '6px', flex: compact ? undefined : 1 }}>
-        <Button size={size} busy={busy} busyLabel="…" onClick={() => approveRequest(req)} aria-label={`Approve ${req.employee?.full_name || ''}'s request`}
-          style={{ ...s.approve, flex: compact ? undefined : 1 }}>Approve</Button>
-        <Button size={size} variant="danger-outline" disabled={busy} onClick={() => denyRequest(req)} aria-label={`Deny ${req.employee?.full_name || ''}'s request`}
-          style={{ flex: compact ? undefined : 1 }}>Deny</Button>
-      </div>
-    )
-  }
-
   function cancelButton(req) {
     return (
-      <Button size="xs" variant="ghost" style={{ color: T.danger }} onClick={() => setConfirmCancel(req)}
+      <Button size="xs" variant="ghost" style={{ color: T.muted }} onClick={() => setConfirmCancel(req)}
         aria-label={`Cancel ${req.employee?.full_name || ''}'s approved time off`}>Cancel</Button>
     )
   }
 
-  function noteInput(req, style) {
+  // A request waiting for Shelley: who, when, what it leaves, then the two
+  // decisions. The note to the employee only opens when it's wanted.
+  function renderPendingCard(req) {
+    const overlapNames = getOverlapNames(req)
+    const details = detailsLine(req)
+    const busy = reviewingId === req.id
+    const first = req.employee?.full_name?.split(' ')[0] || 'them'
+    const portion = req.day_portion === 'am' ? ', morning' : req.day_portion === 'pm' ? ', afternoon' : ''
+    const actions = (
+      <div style={{ display: 'flex', gap: '8px', flexShrink: 0, ...(isMobile ? { marginTop: '14px' } : {}) }}>
+        <Button size="sm" variant="ghost" disabled={busy} onClick={() => denyRequest(req)} style={{ color: T.danger, flex: isMobile ? 1 : undefined }}
+          aria-label={`Deny ${req.employee?.full_name || ''}'s request`}>Deny</Button>
+        <Button size="sm" busy={busy} busyLabel="Saving…" onClick={() => approveRequest(req)} style={{ flex: isMobile ? 1 : undefined, minWidth: '96px' }}
+          aria-label={`Approve ${req.employee?.full_name || ''}'s request`}>Approve</Button>
+      </div>
+    )
     return (
-      <input
-        className="il-input"
-        style={style}
-        aria-label={`Note to ${req.employee?.full_name || 'the employee'}`}
-        placeholder="Note to the employee (optional)"
-        value={reviewNotes[req.id] || ''}
-        onChange={e => setReviewNotes(prev => ({ ...prev, [req.id]: e.target.value }))}
-      />
+      <article key={req.id} style={{ ...s.card, padding: isMobile ? '16px' : '18px 20px', marginBottom: '10px' }}>
+        <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+          <Avatar name={req.employee?.full_name} colorKey={req.employee?.email} size={36} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 'var(--text-md)', fontWeight: 600, color: T.text }}>{req.employee?.full_name || '?'}</span>
+              <span style={{ fontSize: 'var(--text-sm)', color: T.muted }}>{TYPE_LABELS[req.type] || req.type}</span>
+            </div>
+            <div style={{ fontSize: 'var(--text-md)', color: T.text, marginTop: '4px' }}>
+              {fmtDateRange(req.start_date, req.end_date)}
+              <span style={{ color: T.muted }}> · {formatDays(req.business_days).slice(0, -1)} day{Number(req.business_days) === 1 ? '' : 's'}{portion}</span>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 14px', fontSize: 'var(--text-sm)', color: T.muted, marginTop: '6px' }}>
+              {balanceSummary(req)}
+              {overlapNames.length > 0 && <span style={{ color: T.warning }}>{overlapNames.join(', ')} also off</span>}
+            </div>
+            {details && <div style={{ marginTop: '8px' }}>{details}</div>}
+            <div style={{ marginTop: '10px' }}>
+              {noteOpen[req.id] ? (
+                <input className="il-input" autoFocus style={{ maxWidth: '440px', padding: '6px 10px', fontSize: 'var(--text-sm)' }}
+                  aria-label={`Note to ${req.employee?.full_name || 'the employee'}`}
+                  placeholder={`Note to ${first}, included in the email`}
+                  value={reviewNotes[req.id] || ''}
+                  onChange={e => setReviewNotes(prev => ({ ...prev, [req.id]: e.target.value }))} />
+              ) : (
+                <button type="button" className="il-link-subtle" onClick={() => setNoteOpen(prev => ({ ...prev, [req.id]: true }))}
+                  style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit', fontSize: 'var(--text-sm)', color: T.brand }}>
+                  Add a note for {first}
+                </button>
+              )}
+            </div>
+            {isMobile && actions}
+          </div>
+          {!isMobile && actions}
+        </div>
+      </article>
     )
   }
 
-  function renderRequestCard(req) {
-    const overlapNames = getOverlapNames(req)
-    const pending = req.status === TIME_OFF_STATUS.PENDING
-    const details = detailsLine(req)
+  // A request that's been decided: one quiet line, and Cancel while approved
+  // time off is still ahead.
+  function renderDecidedRow(req) {
+    const verb = req.status === TIME_OFF_STATUS.APPROVED ? 'Approved' : req.status === TIME_OFF_STATUS.DENIED ? 'Denied' : null
+    const by = verb && req.reviewer?.full_name ? `${verb} by ${req.reviewer.full_name.split(' ')[0]}` : null
     return (
-      <div key={req.id} style={{ ...s.card, padding: '14px 16px', marginBottom: '10px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: '8px' }}>
-          <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <Avatar name={req.employee?.full_name} colorKey={req.employee?.email} size={32} />
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 'var(--text-md)', fontWeight: 500, color: T.text }}>{req.employee?.full_name || '?'}</div>
-              {overlapNames.length > 0 && (
-                <div style={{ fontSize: 'var(--text-xs)', color: T.warning, marginTop: '2px' }}>{overlapNames.join(', ')} also off</div>
-              )}
-            </div>
+      <div key={req.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', borderBottom: `1px solid ${T.borderSubtle}` }}>
+        <Avatar name={req.employee?.full_name} colorKey={req.employee?.email} size={28} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 500, color: T.text, fontSize: 'var(--text-base)' }}>{req.employee?.full_name || '?'}</div>
+          <div style={{ fontSize: 'var(--text-sm)', color: T.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: isMobile ? 'normal' : 'nowrap' }}>
+            {[fmtDateRange(req.start_date, req.end_date), TYPE_LABELS[req.type] || req.type, formatDays(req.business_days), by].filter(Boolean).join(' · ')}
+            {req.review_notes && <span style={{ color: T.subtle }}> · “{req.review_notes}”</span>}
           </div>
-          <StatusPill status={req.status} />
+          {isMobile && <div style={{ marginTop: '6px' }}><StatusPill status={req.status} /></div>}
         </div>
-        <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', fontSize: 'var(--text-base)', color: T.muted, marginBottom: '8px' }}>
-          <span>{fmtDateRange(req.start_date, req.end_date)}</span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <TypeIcon type={req.type} size={12} />{TYPE_LABELS[req.type] || req.type}
-          </span>
-          <span className="il-tabular">{formatDays(req.business_days)}{req.is_half_day ? ' ½' : ''}</span>
-          {pending && <span>After: {afterCell(req)}</span>}
-        </div>
-        {details && <div style={{ marginBottom: pending || canHrCancel(req) ? '10px' : 0 }}>{details}</div>}
-        {pending && (
-          <div>
-            {noteInput(req, { marginBottom: '10px' })}
-            {reviewButtons(req, false)}
-          </div>
-        )}
-        {canHrCancel(req) && cancelButton(req)}
+        {!isMobile && <StatusPill status={req.status} />}
+        <div style={{ width: isMobile ? 'auto' : '64px', textAlign: 'right' }}>{canHrCancel(req) && cancelButton(req)}</div>
       </div>
     )
   }
@@ -720,6 +711,22 @@ ${extra}${appLink('/', 'See it in your portal')}`
   const notTracked = employees.filter(e => !takesTimeOff(e))
   const prevYearCount = allBalances.filter(b => Number(b.year) === balYear - 1).length
 
+  // People and holidays for the calendar's branch. Someone with no branch set
+  // counts as Halifax, as the day counts do.
+  const calProvince = calBranch ? branchProvince(calBranch) : null
+  const calRequests = calBranch ? requests.filter(r => (r.employee?.branch || 'halifax') === calBranch) : requests
+  const calHolidays = calProvince ? holidays.filter(h => !h.province || h.province === calProvince) : holidays
+  const holidaysOn = iso => groupHolidays(calHolidays.filter(h => holidayOn(h, iso)))
+  const holidayLabel = g => g.everywhere || calProvince ? g.name : `${g.name} (${g.provinces.join(', ')})`
+
+  async function copyWeek(monday, entries, weekHols, showBranch) {
+    const ok = await copyRich(weekEmail(monday, entries, { holidays: weekHols, showBranch }))
+    if (!ok) { showToast("Your browser wouldn't allow copying. Select the list and copy it instead.", 'error'); return }
+    setCopiedWeek(monday)
+    showToast('Copied. Paste it into your email.')
+    setTimeout(() => setCopiedWeek(c => (c === monday ? null : c)), 2500)
+  }
+
   const pendingCount = requests.filter(r => r.status === TIME_OFF_STATUS.PENDING).length
   const skeletonCards = [1, 2, 3].map(i => (
     <div key={i} style={{ ...s.card, padding: '16px', marginBottom: '10px' }}><SkeletonLine width={`${40 + i * 10}%`} height="13px" /></div>
@@ -735,8 +742,8 @@ ${extra}${appLink('/', 'See it in your portal')}`
           mode: 'tabs', label: 'Time off views', value: subView, onChange: setSubView,
           items: [
             { id: 'requests', label: 'Requests', badge: pendingCount || null },
+            { id: 'calendar', label: "Who's off" },
             { id: 'balances', label: 'Balances' },
-            { id: 'calendar', label: 'Calendar' },
             { id: 'holidays', label: 'Holidays' },
           ],
         }}
@@ -744,119 +751,96 @@ ${extra}${appLink('/', 'See it in your portal')}`
 
       <div style={s.page} role="tabpanel" aria-label={subView}>
         {/* ── REQUESTS ── */}
-        {subView === 'requests' && (
-          <>
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
-              <select className="il-input" aria-label="Filter by status" style={{ width: isMobile ? 'auto' : '170px', flex: isMobile ? 1 : 'none' }} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-                <option value="all">All statuses</option>
-                <option value={TIME_OFF_STATUS.PENDING}>Pending</option>
-                <option value={TIME_OFF_STATUS.APPROVED}>Approved</option>
-                <option value={TIME_OFF_STATUS.DENIED}>Denied</option>
-                <option value={TIME_OFF_STATUS.CANCELLED}>Cancelled</option>
-              </select>
-              {allEmployees.length > 0 && (
-                <select className="il-input" aria-label="Filter by employee" style={{ width: isMobile ? 'auto' : '200px', flex: isMobile ? 1 : 'none', minWidth: 0 }} value={filterEmployee} onChange={e => setFilterEmployee(e.target.value)}>
-                  <option value="">All employees</option>
-                  {allEmployees.map(emp => <option key={emp.id} value={emp.id}>{emp.full_name}</option>)}
-                </select>
-              )}
-              {(filterStatus !== 'all' || filterEmployee) && (
-                <Button size="sm" variant="ghost" onClick={() => { setFilterStatus('all'); setFilterEmployee('') }}>Clear filters</Button>
-              )}
-              <span aria-live="polite" style={{ fontSize: 'var(--text-sm)', color: T.subtle, marginLeft: 'auto' }}>
-                {loading ? '' : `${displayRequests.length} result${displayRequests.length !== 1 ? 's' : ''}`}
-              </span>
-            </div>
+        {subView === 'requests' && (() => {
+          const pending = requests.filter(r => r.status === TIME_OFF_STATUS.PENDING).sort((a, b) => (a.start_date < b.start_date ? -1 : 1))
+          const decidedAll = requests.filter(r => r.status !== TIME_OFF_STATUS.PENDING)
+          const decided = decidedAll
+            .filter(r => filterStatus === 'all' || r.status === filterStatus)
+            .filter(r => !filterEmployee || r.employee_id === filterEmployee)
+            .sort((a, b) => (a.start_date < b.start_date ? 1 : -1))
+          const shown = decided.slice(0, decidedLimit)
+          return (
+            <>
+              <section aria-labelledby="il-waiting">
+                <h2 id="il-waiting" className="il-section-title" style={{ marginBottom: '12px' }}>
+                  Waiting for you{!loading && pending.length > 0 && <span style={{ color: T.muted, fontWeight: 500 }}> · {pending.length}</span>}
+                </h2>
+                {loading ? skeletonCards : pending.length === 0 ? (
+                  <div style={{ ...s.card, padding: '18px 20px', color: T.muted, fontSize: 'var(--text-base)' }}>
+                    You're all caught up. New requests will appear here, and you'll get an email when one comes in.
+                  </div>
+                ) : pending.map(renderPendingCard)}
+              </section>
 
-            {loading ? skeletonCards : displayRequests.length === 0 ? (
-              <div style={s.card}>
-                <EmptyState icon={EmptyIcons.calendar}
-                  title={requests.length === 0 ? 'No time off requests yet' : 'No requests match'}
-                  message={requests.length === 0 ? 'Requests employees submit will show up here for review. You can also log time off for someone with "Log time off".' : 'Try clearing the filters.'} />
-              </div>
-            ) : isMobile ? (
-              displayRequests.map(renderRequestCard)
-            ) : (
-              <div style={{ ...s.card, overflow: 'hidden' }} role="table" aria-label="Time off requests">
-                <div style={s.tHead(REQ_COLS)} role="row">
-                  <div role="columnheader">{sortHeader('employee_name', 'Employee')}</div>
-                  <div role="columnheader">{sortHeader('start_date', 'Dates')}</div>
-                  <div role="columnheader">Type</div>
-                  <div role="columnheader">{sortHeader('business_days', 'Days')}</div>
-                  <div role="columnheader">{sortHeader('status', 'Status')}</div>
-                  <div role="columnheader" title="What's left of the vacation or care day allowance if this request is approved">Left after</div>
-                  <div role="columnheader"><span className="il-visually-hidden">Actions</span></div>
-                </div>
-                {displayRequests.map(req => {
-                  const overlapNames = getOverlapNames(req)
-                  const pending = req.status === TIME_OFF_STATUS.PENDING
-                  const details = detailsLine(req)
-                  return (
-                    <div key={req.id} role="row" style={{ borderBottom: `1px solid ${T.borderSubtle}`, background: pending ? T.surface : 'transparent' }}>
-                      <div style={{ ...s.tRow(REQ_COLS), borderBottom: 'none' }}>
-                        <div role="cell" style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <Avatar name={req.employee?.full_name} colorKey={req.employee?.email} size={28} />
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ fontWeight: 500 }}>{req.employee?.full_name || '?'}</div>
-                            {overlapNames.length > 0 && (
-                              <div style={{ fontSize: 'var(--text-xs)', color: T.warning, marginTop: '2px' }}>{overlapNames.join(', ')} also off</div>
-                            )}
-                          </div>
-                        </div>
-                        <div role="cell" style={{ color: T.muted, fontSize: 'var(--text-sm)' }}>{fmtDateRange(req.start_date, req.end_date)}</div>
-                        <div role="cell" style={{ display: 'flex', alignItems: 'center', gap: '5px', color: T.muted, fontSize: 'var(--text-sm)', minWidth: 0 }}>
-                          <TypeIcon type={req.type} size={12} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{TYPE_LABELS[req.type] || req.type}</span>
-                        </div>
-                        <div role="cell" className="il-tabular">{formatDays(req.business_days)}{req.is_half_day ? <span style={{ fontSize: 'var(--text-xs)', color: T.muted }}> ½</span> : null}</div>
-                        <div role="cell"><StatusPill status={req.status} /></div>
-                        <div role="cell" style={{ fontSize: 'var(--text-base)' }}>{pending ? afterCell(req) : <span style={{ color: T.subtle }}>–</span>}</div>
-                        <div role="cell">{pending ? reviewButtons(req, true) : canHrCancel(req) ? cancelButton(req) : null}</div>
-                      </div>
-                      {(pending || details) && (
-                        <div style={{ padding: '0 16px 12px', display: 'grid', gap: '8px' }}>
-                          {details}
-                          {pending && noteInput(req, { maxWidth: '420px', padding: '6px 10px', fontSize: 'var(--text-sm)' })}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </>
-        )}
+              {!loading && decidedAll.length > 0 && (
+                <section aria-labelledby="il-decided" style={{ marginTop: '36px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                    <h2 id="il-decided" className="il-section-title" style={{ marginRight: 'auto' }}>Decided</h2>
+                    <select className="il-input" aria-label="Show" style={{ width: 'auto', padding: '5px 30px 5px 10px', fontSize: 'var(--text-sm)' }} value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setDecidedLimit(20) }}>
+                      <option value="all">All decisions</option>
+                      <option value={TIME_OFF_STATUS.APPROVED}>Approved</option>
+                      <option value={TIME_OFF_STATUS.DENIED}>Denied</option>
+                      <option value={TIME_OFF_STATUS.CANCELLED}>Cancelled</option>
+                    </select>
+                    <select className="il-input" aria-label="Person" style={{ width: 'auto', maxWidth: '200px', padding: '5px 30px 5px 10px', fontSize: 'var(--text-sm)' }} value={filterEmployee} onChange={e => { setFilterEmployee(e.target.value); setDecidedLimit(20) }}>
+                      <option value="">Everyone</option>
+                      {allEmployees.map(emp => <option key={emp.id} value={emp.id}>{emp.full_name}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ ...s.card, overflow: 'hidden' }}>
+                    {shown.length === 0
+                      ? <div style={{ padding: '16px', fontSize: 'var(--text-sm)', color: T.muted }}>Nothing matches. <button type="button" className="il-link-subtle" onClick={() => { setFilterStatus('all'); setFilterEmployee('') }} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit', color: T.brand }}>Show everything</button></div>
+                      : shown.map(renderDecidedRow)}
+                  </div>
+                  {decided.length > shown.length && (
+                    <Button size="sm" variant="ghost" style={{ marginTop: '8px' }} onClick={() => setDecidedLimit(n => n + 20)}>Show more</Button>
+                  )}
+                </section>
+              )}
+            </>
+          )
+        })()}
 
         {/* ── BALANCES ── */}
         {subView === 'balances' && (
           <>
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '14px' }}>
-              <Segmented size="sm" label="Balance year" value={balYear} onChange={y => { setBalYear(y); setEditing(null); setExpandedEmployeeId(null) }}
+              <Segmented size="sm" label="Balance year" value={balYear} onChange={y => { setBalYear(y); setEditing(null); setExpandedEmployeeId(null); setBulkOpen(false) }}
                 options={[CURRENT_YEAR - 1, CURRENT_YEAR, CURRENT_YEAR + 1].map(y => ({ value: y, label: String(y) }))} />
-              <div style={{ flex: isMobile ? '1 1 100%' : '0 1 260px', minWidth: 0 }}>
+              <div style={{ flex: isMobile ? '1 1 100%' : '0 1 260px', minWidth: 0, order: isMobile ? 3 : 0 }}>
                 <SearchInput value={balSearch} onChange={setBalSearch} placeholder="Find a person…" label="Find a person" />
               </div>
-              <div style={{ display: 'flex', gap: '8px', marginLeft: isMobile ? 0 : 'auto', flexWrap: 'wrap' }}>
-                {prevYearCount > 0 && (
-                  <Button size="sm" variant="secondary" onClick={() => setStartYearOpen(true)}>Copy {balYear - 1} into {balYear}</Button>
-                )}
-                <Button size="sm" variant="secondary" onClick={() => { setImportYear(balYear); setImportOpen(true) }}>Import HR list</Button>
+              <div style={{ marginLeft: 'auto' }}>
+                <Menu label="Yearly set-up" triggerLabel="Set up a year" items={[
+                  { label: 'Import HR list', hint: "Each person's start date and allowances, from Excel", onClick: () => { setImportYear(balYear); setImportOpen(true) } },
+                  { label: `Copy ${balYear - 1} into ${balYear}`, hint: prevYearCount > 0 ? 'Same allowances as last year' : `No ${balYear - 1} allowances to copy`, disabled: prevYearCount === 0, onClick: () => setStartYearOpen(true) },
+                ]} />
               </div>
             </div>
 
             {!loading && missingCount > 0 && (
-              <form onSubmit={e => { e.preventDefault(); applyBulkEntitlement() }}
-                style={{ ...s.card, padding: '12px 16px', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', background: T.surfaceSunken }}>
-                <span style={{ fontSize: 'var(--text-sm)', color: T.text }}>
-                  <strong>{missingCount}</strong> {missingCount === 1 ? 'person has' : 'people have'} nothing set for {balYear}. Give them all
-                </span>
-                <input className="il-input il-tabular" type="number" min="0" step="0.5" aria-label={`Personal / vacation days for everyone without a ${balYear} allowance`}
-                  style={{ width: '70px', padding: '5px 8px' }} value={bulkDays} onChange={e => setBulkDays(e.target.value)} placeholder="0" />
-                <span style={{ fontSize: 'var(--text-sm)', color: T.muted }}>vacation and</span>
-                <input className="il-input il-tabular" type="number" min="0" step="0.5" aria-label={`Care days for everyone without a ${balYear} allowance`}
-                  style={{ width: '70px', padding: '5px 8px' }} value={bulkCare} onChange={e => setBulkCare(e.target.value)} placeholder="0" />
-                <span style={{ fontSize: 'var(--text-sm)', color: T.muted }}>care days</span>
-                <Button size="sm" type="submit" busy={bulkSaving} busyLabel="Saving…" disabled={!bulkDays && !bulkCare}>Apply</Button>
-              </form>
+              <div style={{ fontSize: 'var(--text-sm)', color: T.muted, margin: '0 2px 14px' }}>
+                {!bulkOpen ? (
+                  <>
+                    {missingCount} {missingCount === 1 ? 'person has' : 'people have'} no {balYear} allowance yet.{' '}
+                    <button type="button" className="il-link-subtle" onClick={() => setBulkOpen(true)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit', color: T.brand }}>
+                      Set one for all of them
+                    </button>
+                  </>
+                ) : (
+                  <form onSubmit={e => { e.preventDefault(); applyBulkEntitlement() }} style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <span>Give the {missingCount} {missingCount === 1 ? 'person' : 'people'} without a {balYear} allowance</span>
+                    <input className="il-input il-tabular" type="number" min="0" step="0.5" aria-label="Vacation days" autoFocus
+                      style={{ width: '64px', padding: '4px 8px' }} value={bulkDays} onChange={e => setBulkDays(e.target.value)} placeholder="0" />
+                    <span>vacation and</span>
+                    <input className="il-input il-tabular" type="number" min="0" step="0.5" aria-label="Care days"
+                      style={{ width: '64px', padding: '4px 8px' }} value={bulkCare} onChange={e => setBulkCare(e.target.value)} placeholder="0" />
+                    <span>care days</span>
+                    <Button size="xs" type="submit" busy={bulkSaving} busyLabel="Saving…" disabled={!bulkDays && !bulkCare}>Apply</Button>
+                    <Button size="xs" variant="ghost" onClick={() => setBulkOpen(false)}>Cancel</Button>
+                  </form>
+                )}
+              </div>
             )}
 
             {loading ? skeletonCards : balanceRows.length === 0 ? (
@@ -866,8 +850,8 @@ ${extra}${appLink('/', 'See it in your portal')}`
                 {!isMobile && (
                   <div style={s.tHead(BAL_COLS)}>
                     <div>Employee</div>
-                    <div title="Personal / Vacation days for the year">Vacation</div><div>Used</div><div title="Left once pending requests are approved">Left</div>
-                    <div title="Care days for the year" style={{ borderLeft: `1px solid ${T.border}`, paddingLeft: '12px', marginLeft: '-12px' }}>Care days</div><div>Used</div><div>Left</div>
+                    <div title="Personal / Vacation days">Vacation</div>
+                    <div>Care days</div>
                     <div></div>
                   </div>
                 )}
@@ -882,11 +866,9 @@ ${extra}${appLink('/', 'See it in your portal')}`
                   ].filter(Boolean).join(' · ') || row.employee.email
                   const nameButton = (
                     <button type="button" aria-expanded={isExpanded} onClick={() => setExpandedEmployeeId(isExpanded ? null : row.employee.id)}
-                      style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, textAlign: 'left', background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'inherit', cursor: 'pointer' }}>
-                      <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" style={{ color: T.subtle, flexShrink: 0, transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>
-                        <path d="M3 1.5L6.5 5 3 8.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                      </svg>
-                      <Avatar name={row.employee.full_name} colorKey={row.employee.email} size={28} />
+                      title={isExpanded ? 'Hide requests' : `Show ${balYear} requests`}
+                      style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, textAlign: 'left', background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'inherit', cursor: 'pointer' }}>
+                      <Avatar name={row.employee.full_name} colorKey={row.employee.email} size={30} />
                       <span style={{ minWidth: 0 }}>
                         <span style={{ display: 'block', fontWeight: 500, color: T.text }}>{row.employee.full_name}</span>
                         <span style={{ display: 'block', fontSize: 'var(--text-xs)', color: T.subtle, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{subtitle}</span>
@@ -894,7 +876,7 @@ ${extra}${appLink('/', 'See it in your portal')}`
                     </button>
                   )
                   const editButton = (
-                    <Button size="xs" variant="secondary"
+                    <Button size="xs" variant={notSet ? 'secondary' : 'ghost'}
                       onClick={() => setEditing({
                         employeeId: row.employee.id,
                         vacation: String(vac.entitlement), vacationUsed: String(vac.used),
@@ -903,19 +885,27 @@ ${extra}${appLink('/', 'See it in your portal')}`
                       })}
                       aria-label={`Edit ${row.employee.full_name}'s ${balYear} balance`}>{notSet ? 'Set' : 'Edit'}</Button>
                   )
-                  const days = (n, opts = {}) => <span className="il-tabular" style={{ color: opts.muted && !n ? T.subtle : T.text }}>{opts.muted && !n ? '–' : formatDays(n)}</span>
-                  const left = sum => notSet && !sum.pending ? <span style={{ color: T.subtle }}>–</span> : (
-                    <span style={{ display: 'inline-flex', flexDirection: 'column', lineHeight: 1.25 }}>
-                      <span className="il-tabular" style={{ fontWeight: 600, color: sum.remaining < 0 ? T.danger : T.text }}>{formatDays(sum.remaining)}</span>
-                      {sum.pending > 0 && <span className="il-tabular" style={{ fontSize: 'var(--text-xs)', color: T.warning }}>{formatDays(sum.pending)} pending</span>}
+                  // "7 left of 15", with used and pending underneath.
+                  const cell = sum => notSet ? <span style={{ color: T.subtle, fontSize: 'var(--text-sm)' }}>Not set</span> : (
+                    <span style={{ display: 'inline-flex', flexDirection: 'column', lineHeight: 1.3 }}>
+                      <span className="il-tabular">
+                        <strong style={{ fontWeight: 600, fontSize: 'var(--text-md)', color: sum.remaining < 0 ? T.danger : T.text }}>
+                          {formatDays(Math.abs(sum.remaining)).slice(0, -1)}{sum.remaining < 0 ? ' over' : ''}
+                        </strong>
+                        <span style={{ color: T.muted, fontSize: 'var(--text-sm)' }}>{sum.remaining < 0 ? ' · ' : ' left of '}{sum.remaining < 0 ? `${formatDays(sum.entitlement).slice(0, -1)} allowed` : formatDays(sum.entitlement).slice(0, -1)}</span>
+                      </span>
+                      {(sum.used > 0 || sum.pending > 0) && (
+                        <span className="il-tabular" style={{ fontSize: 'var(--text-xs)', color: T.subtle }}>
+                          {[sum.used > 0 ? `${formatDays(sum.used).slice(0, -1)} used` : null, sum.pending > 0 ? `${formatDays(sum.pending).slice(0, -1)} pending` : null].filter(Boolean).join(' · ')}
+                        </span>
+                      )}
                     </span>
                   )
-                  const allowance = sum => notSet ? <span style={{ color: T.warning, fontSize: 'var(--text-sm)' }}>Not set</span> : days(sum.entitlement)
                   const editForm = isEditing && (
                     <form onSubmit={e => { e.preventDefault(); saveBalance(row) }}
-                      style={{ padding: isMobile ? '0 16px 14px' : '4px 16px 14px 42px', display: 'grid', gap: '12px' }}>
+                      style={{ padding: isMobile ? '0 16px 16px' : '4px 16px 16px 56px', display: 'grid', gap: '12px' }}>
                       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 130px)', gap: '10px' }}>
-                        {[['vacation', 'Personal / vacation'], ['vacationUsed', 'Vacation used'], ['care', 'Care days'], ['careUsed', 'Care days used']].map(([key, label]) => (
+                        {[['vacation', `${balYear} vacation`], ['vacationUsed', 'Vacation used'], ['care', `${balYear} care days`], ['careUsed', 'Care days used']].map(([key, label]) => (
                           <label key={key} style={{ display: 'grid', gap: '4px', fontSize: 'var(--text-xs)', color: T.muted, fontWeight: 500 }}>
                             {label}
                             <input className="il-input il-tabular" type="number" min="0" step="0.5" autoFocus={key === 'vacation'}
@@ -939,9 +929,9 @@ ${extra}${appLink('/', 'See it in your portal')}`
                         </label>
                       </div>
                       <div style={{ fontSize: 'var(--text-xs)', color: T.subtle, lineHeight: 1.5, maxWidth: '560px' }}>
-                        Approvals add to Used automatically. Only change Used to record days taken before this system, or to correct a mistake. Branch and start date apply to every year.
+                        Approvals add to Used on their own. Only change Used to record days taken before this system, or to fix a mistake.
                       </div>
-                      <div style={{ display: 'flex', gap: '6px' }}>
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
                         <Button size="xs" type="submit" busy={savingBalance} busyLabel="Saving…">Save</Button>
                         <Button size="xs" variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
                         <Button size="xs" variant="ghost" style={{ marginLeft: 'auto', color: T.muted }} disabled={savingBalance}
@@ -957,45 +947,32 @@ ${extra}${appLink('/', 'See it in your portal')}`
                     <div key={row.employee.id} style={{ borderBottom: `1px solid ${T.borderSubtle}`, background: isExpanded || isEditing ? T.surfaceSunken : 'transparent' }}>
                       {isMobile ? (
                         <div style={{ padding: '14px 16px' }}>
-                          <div style={{ marginBottom: '10px' }}>{nameButton}</div>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', fontSize: 'var(--text-sm)' }}>
-                            {[[BUCKETS.vacation.label, vac], [BUCKETS.care.label, care]].map(([label, sum]) => (
-                              <div key={label} style={{ background: T.surfaceSunken, borderRadius: T.radiusSm, padding: '8px 10px' }}>
-                                <div style={{ color: T.muted, marginBottom: '4px' }}>{label}</div>
-                                {notSet ? allowance(sum) : (
-                                  <div style={{ color: T.text }}>
-                                    <span style={{ fontWeight: 600 }}>{formatDays(sum.remaining)}</span> left of {formatDays(sum.entitlement)}
-                                    {sum.pending > 0 && <div style={{ fontSize: 'var(--text-xs)', color: T.warning }}>{formatDays(sum.pending)} pending</div>}
-                                  </div>
-                                )}
-                              </div>
-                            ))}
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '10px' }}>
+                            {nameButton}
+                            {!isEditing && editButton}
                           </div>
-                          {!isEditing && <div style={{ marginTop: '10px' }}>{editButton}</div>}
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', paddingLeft: '40px' }}>
+                            <div><div style={{ fontSize: 'var(--text-xs)', color: T.subtle, marginBottom: '2px' }}>Vacation</div>{cell(vac)}</div>
+                            <div><div style={{ fontSize: 'var(--text-xs)', color: T.subtle, marginBottom: '2px' }}>Care days</div>{cell(care)}</div>
+                          </div>
                         </div>
                       ) : (
                         <div style={{ ...s.tRow(BAL_COLS), borderBottom: 'none' }}>
                           <div style={{ minWidth: 0 }}>{nameButton}</div>
-                          <div>{allowance(vac)}</div>
-                          <div>{days(vac.used, { muted: true })}</div>
-                          <div>{left(vac)}</div>
-                          <div style={{ borderLeft: `1px solid ${T.borderSubtle}`, paddingLeft: '12px', marginLeft: '-12px', alignSelf: 'stretch', display: 'flex', alignItems: 'center' }}>{allowance(care)}</div>
-                          <div>{days(care.used, { muted: true })}</div>
-                          <div>{left(care)}</div>
-                          <div>{!isEditing && editButton}</div>
+                          <div>{cell(vac)}</div>
+                          <div>{cell(care)}</div>
+                          <div style={{ textAlign: 'right' }}>{!isEditing && editButton}</div>
                         </div>
                       )}
                       {editForm}
                       {isExpanded && (
                         <div style={{ borderTop: `1px solid ${T.borderSubtle}` }}>
                           {row.requests.length === 0 ? (
-                            <div style={{ padding: '12px 24px', fontSize: 'var(--text-sm)', color: T.subtle }}>No requests in {balYear}.</div>
+                            <div style={{ padding: isMobile ? '12px 16px' : '12px 16px 12px 56px', fontSize: 'var(--text-sm)', color: T.subtle }}>No requests in {balYear}.</div>
                           ) : row.requests.map(req => (
-                            <div key={req.id} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr auto' : '1fr 1fr 70px 100px', gap: '8px', padding: isMobile ? '10px 16px' : '10px 24px 10px 42px', borderBottom: `1px solid ${T.borderSubtle}`, fontSize: 'var(--text-sm)', color: T.muted, alignItems: 'center' }}>
-                              <div>{fmtDateRange(req.start_date, req.end_date)}{isMobile && <div style={{ marginTop: '2px' }}>{TYPE_LABELS[req.type] || req.type} · {formatDays(req.business_days)}</div>}</div>
-                              {!isMobile && <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><TypeIcon type={req.type} size={11} />{TYPE_LABELS[req.type] || req.type}{!countsAgainstBalance(req.type) && <span style={{ color: T.subtle }}> (not from balance)</span>}</div>}
-                              {!isMobile && <div className="il-tabular">{formatDays(req.business_days)}</div>}
-                              <div><StatusPill status={req.status} /></div>
+                            <div key={req.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: isMobile ? '10px 16px' : '10px 16px 10px 56px', borderBottom: `1px solid ${T.borderSubtle}`, fontSize: 'var(--text-sm)', color: T.muted }}>
+                              <span style={{ flex: 1, minWidth: 0 }}>{fmtDateRange(req.start_date, req.end_date)} · {TYPE_LABELS[req.type] || req.type} · {formatDays(req.business_days)}</span>
+                              <StatusPill status={req.status} />
                             </div>
                           ))}
                         </div>
@@ -1022,68 +999,48 @@ ${extra}${appLink('/', 'See it in your portal')}`
               </details>
             )}
             <p style={{ fontSize: 'var(--text-xs)', color: T.subtle, margin: '12px 2px 0', lineHeight: 1.6, maxWidth: '720px' }}>
-              Left = allowance − used − pending. Personal / Vacation requests come out of Vacation and Care Day requests out of Care days; other types are tracked but don't change either. Unused days don't carry over.
+              "Left" counts pending requests as if they're approved. Personal / Vacation requests use Vacation; Care Day requests use Care days; other leave doesn't use either. Unused days don't carry over.
             </p>
           </>
         )}
 
-        {/* ── CALENDAR ── */}
+        {/* ── WHO'S OFF (calendar + weekly list) ── */}
         {subView === 'calendar' && (
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
               <Button size="sm" variant="secondary" onClick={prevMonth} aria-label="Previous month">‹</Button>
-              <h2 aria-live="polite" style={{ ...T.type.h2, margin: 0, fontSize: 'var(--text-md)', color: T.text, minWidth: isMobile ? '130px' : '160px', textAlign: 'center' }}>
+              <h2 aria-live="polite" className="il-section-title" style={{ minWidth: isMobile ? '140px' : '170px', textAlign: 'center' }}>
                 {MONTH_NAMES[calMonth]} {calYear}
               </h2>
               <Button size="sm" variant="secondary" onClick={nextMonth} aria-label="Next month">›</Button>
               <Button size="sm" variant="ghost" onClick={() => { setCalYear(new Date().getFullYear()); setCalMonth(new Date().getMonth()) }}>Today</Button>
-              <select className="il-input" aria-label="Show branch" style={{ width: 'auto', padding: '5px 30px 5px 8px', fontSize: 'var(--text-sm)' }} value={calBranch} onChange={e => setCalBranch(e.target.value)}>
+              <select className="il-input" aria-label="Show branch" style={{ width: 'auto', padding: '5px 30px 5px 10px', fontSize: 'var(--text-sm)', marginLeft: isMobile ? 0 : 'auto' }} value={calBranch} onChange={e => setCalBranch(e.target.value)}>
                 <option value="">All branches</option>
                 {BRANCHES.map(b => <option key={b.code} value={b.code}>{b.name}</option>)}
               </select>
-              {!isMobile && (
-                <div style={{ display: 'flex', gap: '14px', marginLeft: 'auto', alignItems: 'center', fontSize: 'var(--text-sm)', color: T.muted }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span aria-hidden="true" style={{ width: '22px', height: '12px', borderRadius: '3px', ...eventColors(avatarHue('legend'), false) }} />Approved
-                  </span>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span aria-hidden="true" style={{ width: '22px', height: '12px', borderRadius: '3px', ...eventColors(avatarHue('legend'), true) }} />Pending
-                  </span>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span aria-hidden="true" style={{ width: '12px', height: '12px', borderRadius: '3px', background: T.brandLight, border: `1px solid ${T.border}` }} />Holiday
-                  </span>
-                </div>
-              )}
             </div>
 
             <div style={{ overflowX: isMobile ? 'auto' : 'visible', WebkitOverflowScrolling: 'touch' }}>
               <div style={{ ...s.card, overflow: 'hidden', minWidth: isMobile ? '560px' : 'auto' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: `1px solid ${T.border}`, background: T.surfaceSunken }}>
                   {DOW_LABELS.map((d, i) => (
-                    <div key={d} style={{ padding: isMobile ? '6px 4px' : '8px 10px', fontSize: 'var(--text-xs)', fontWeight: 600, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'center', borderRight: i < 6 ? `1px solid ${T.borderSubtle}` : 'none' }}>
+                    <div key={d} style={{ padding: isMobile ? '7px 4px' : '9px 10px', fontSize: 'var(--text-xs)', fontWeight: 600, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'center', borderRight: i < 6 ? `1px solid ${T.borderSubtle}` : 'none' }}>
                       {isMobile ? d.slice(0, 1) : d}
                     </div>
                   ))}
                 </div>
 
                 {loading ? (
-                  <div style={{ padding: '24px' }}><SkeletonLine width="100%" height="220px" /></div>
+                  <div style={{ padding: '24px' }}><SkeletonLine width="100%" height="320px" /></div>
                 ) : (() => {
                   const cells = buildCalendarDays(calYear, calMonth)
-                  // People and holidays for the chosen branch. Someone with no
-                  // branch set counts as Halifax, as the day counts do.
-                  const calProvince = calBranch ? branchProvince(calBranch) : null
-                  const calRequests = calBranch ? requests.filter(r => (r.employee?.branch || 'halifax') === calBranch) : requests
-                  const calHolidays = calProvince ? holidays.filter(h => !h.province || h.province === calProvince) : holidays
-                  const holidaysOn = iso => groupHolidays(calHolidays.filter(h => holidayOn(h, iso)))
-                  const holidayLabel = g => g.everywhere || calProvince ? g.name : `${g.name} (${g.provinces.join(', ')})`
                   const weeks = []
                   for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7))
 
                   return weeks.map((week, wi) => {
                     const weekDates = week.map(day => day ? `${calYear}-${pad(calMonth + 1)}-${pad(day)}` : null)
                     const { assignments, trackCount } = getWeekEventLayout(weekDates, calRequests)
-                    const eventsH = trackCount * SLOT_H + (trackCount > 0 ? 8 : 6)
+                    const eventsH = Math.max(WEEK_MIN_EVENTS_H, trackCount * SLOT_H + 10)
                     const weekHolidays = weekDates.map(d => (d ? holidaysOn(d) : []))
                     const cellBg = (day, di) => !day || di === 0 || di === 6 ? T.surfaceSunken : weekHolidays[di].length ? T.brandLight : T.surface
 
@@ -1096,17 +1053,17 @@ ${extra}${appLink('/', 'See it in your portal')}`
                             const hols = weekHolidays[di]
                             const holTitle = hols.map(g => `${holidayLabel(g)}${g.note ? `. ${g.note}` : ''}`).join('\n')
                             return (
-                              <div key={di} title={holTitle || undefined} style={{ height: DATE_ROW_H, padding: '5px 8px', display: 'flex', justifyContent: 'space-between', gap: '4px', alignItems: 'flex-start', background: cellBg(day, di), borderRight: di < 6 ? `1px solid ${T.borderSubtle}` : 'none', minWidth: 0 }}>
-                                <span style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: T.brandStrong, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, lineHeight: '18px' }}>
+                              <div key={di} title={holTitle || undefined} style={{ height: DATE_ROW_H, padding: '7px 9px 0', display: 'flex', justifyContent: 'space-between', gap: '4px', alignItems: 'flex-start', background: cellBg(day, di), borderRight: di < 6 ? `1px solid ${T.borderSubtle}` : 'none', minWidth: 0 }}>
+                                <span style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: T.brandStrong, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, lineHeight: '20px' }}>
                                   {hols.length > 0 && <span aria-hidden="true">{isMobile ? '•' : `${holidayLabel(hols[0])}${hols.length > 1 ? ` +${hols.length - 1}` : ''}`}</span>}
                                   {hols.length > 0 && <span className="il-visually-hidden">{`, holiday: ${hols.map(holidayLabel).join(', ')}`}</span>}
                                 </span>
                                 {day && (isToday ? (
-                                  <span aria-label={`${day}, today`} style={{ background: T.brand, color: T.onAccent, borderRadius: '50%', width: '20px', height: '20px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--text-xs)', fontWeight: 700 }}>
+                                  <span aria-label={`${day}, today`} style={{ background: T.brand, color: T.onAccent, borderRadius: '50%', width: '22px', height: '22px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--text-xs)', fontWeight: 700, flexShrink: 0 }}>
                                     {day}
                                   </span>
                                 ) : (
-                                  <span className="il-tabular" style={{ fontSize: 'var(--text-sm)', color: isWeekend ? T.subtle : T.muted }}>{day}</span>
+                                  <span className="il-tabular" style={{ fontSize: 'var(--text-sm)', lineHeight: '20px', color: isWeekend ? T.subtle : T.muted }}>{day}</span>
                                 ))}
                               </div>
                             )
@@ -1124,8 +1081,8 @@ ${extra}${appLink('/', 'See it in your portal')}`
                             const isPending = req.status === TIME_OFF_STATUS.PENDING
                             const firstName = req.employee?.full_name?.split(' ')[0] || '?'
                             const colPct = 100 / 7
-                            const lOff = startsThisWeek ? 2 : 0
-                            const rOff = endsThisWeek ? 2 : 0
+                            const lOff = startsThisWeek ? 3 : 0
+                            const rOff = endsThisWeek ? 3 : 0
                             const label = `${req.employee?.full_name || 'Someone'}: ${TYPE_LABELS[req.type] || req.type}${isPending ? ' (pending)' : ''}, ${fmtDateRange(req.start_date, req.end_date)}, ${req.business_days} days`
                             return (
                               <div
@@ -1135,19 +1092,19 @@ ${extra}${appLink('/', 'See it in your portal')}`
                                 role="img"
                                 style={{
                                   position: 'absolute',
-                                  top: track * SLOT_H + 4,
+                                  top: track * SLOT_H + 6,
                                   left: `calc(${startCol * colPct}% + ${lOff}px)`,
                                   width: `calc(${(endCol - startCol + 1) * colPct}% - ${lOff + rOff}px)`,
                                   height: EVENT_H,
                                   ...eventColors(avatarHue(req.employee?.email || req.employee?.full_name), isPending),
                                   fontSize: 'var(--text-xs)', fontWeight: 600,
-                                  display: 'flex', alignItems: 'center', paddingLeft: '6px',
+                                  display: 'flex', alignItems: 'center', paddingLeft: '8px',
                                   overflow: 'hidden', whiteSpace: 'nowrap',
                                   borderRadius: `${startsThisWeek ? 4 : 0}px ${endsThisWeek ? 4 : 0}px ${endsThisWeek ? 4 : 0}px ${startsThisWeek ? 4 : 0}px`,
                                   zIndex: 1,
                                 }}
                               >
-                                {firstName}
+                                {firstName}{isPending ? ' (pending)' : ''}
                               </div>
                             )
                           })}
@@ -1158,6 +1115,80 @@ ${extra}${appLink('/', 'See it in your portal')}`
                 })()}
               </div>
             </div>
+            <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center', fontSize: 'var(--text-xs)', color: T.muted, margin: '10px 2px 0' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span aria-hidden="true" style={{ width: '20px', height: '10px', borderRadius: '3px', ...eventColors(avatarHue('legend'), false) }} />Approved
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span aria-hidden="true" style={{ width: '20px', height: '10px', borderRadius: '3px', ...eventColors(avatarHue('legend'), true) }} />Pending
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span aria-hidden="true" style={{ width: '10px', height: '10px', borderRadius: '3px', background: T.brandLight, border: `1px solid ${T.border}` }} />Holiday
+              </span>
+              <span>Each person keeps their own colour.</span>
+            </div>
+
+            {/* Who's off, week by week: the list HR emails to managers. */}
+            {!loading && (
+              <section aria-labelledby="il-weekly" style={{ marginTop: '36px', maxWidth: '760px' }}>
+                <h2 id="il-weekly" className="il-section-title">Who's off, week by week</h2>
+                <p style={{ fontSize: 'var(--text-sm)', color: T.muted, margin: '4px 0 14px', lineHeight: 1.5 }}>
+                  Approved time off{calBranch ? ` in ${branchName(calBranch)}` : ''}, Monday to Friday. Use “Copy for email” and paste it straight into a message to managers.
+                </p>
+                <div style={{ display: 'grid', gap: '10px' }}>
+                  {weeksOfMonth(calYear, calMonth).map(w => {
+                    const entries = peopleOffInWeek(calRequests, w.monday, w.friday)
+                    const waiting = peopleOffInWeek(calRequests, w.monday, w.friday, { includePending: true }).length - entries.length
+                    const weekHols = []
+                    for (let i = 0; i < 5; i++) {
+                      const d = addDaysIso(w.monday, i)
+                      holidaysOn(d).forEach(g => weekHols.push({ date: d, name: holidayLabel(g) }))
+                    }
+                    const showBranch = !calBranch && new Set(entries.map(e => e.branch || 'halifax')).size > 1
+                    const thisMonday = mondayOf(TODAY)
+                    const tag = w.monday === thisMonday ? 'This week' : w.monday === addDaysIso(thisMonday, 7) ? 'Next week' : null
+                    const copied = copiedWeek === w.monday
+                    return (
+                      <div key={w.monday} style={{ ...s.card, padding: isMobile ? '14px 16px' : '16px 20px', ...(tag === 'This week' ? { borderColor: T.brand } : {}), ...(w.friday < TODAY ? { opacity: 0.6 } : {}) }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                          <h3 style={{ margin: 0, fontSize: 'var(--text-md)', fontWeight: 600, color: T.text }}>{weekTitle(w.monday)}</h3>
+                          {tag && <span style={{ fontSize: 'var(--text-xs)', fontWeight: 600, padding: '1px 7px', borderRadius: T.radiusSm, background: T.brandLight, color: T.brandStrong }}>{tag}</span>}
+                          <Button size="xs" variant={copied ? 'ghost' : 'secondary'} style={{ marginLeft: 'auto' }}
+                            onClick={() => copyWeek(w.monday, entries, weekHols, showBranch)}>
+                            {copied ? 'Copied' : 'Copy for email'}
+                          </Button>
+                        </div>
+                        {entries.length === 0 ? (
+                          <div style={{ fontSize: 'var(--text-sm)', color: T.subtle, marginTop: '8px' }}>Nobody is booked off.</div>
+                        ) : (
+                          <ul style={{ listStyle: 'none', margin: '10px 0 0', padding: 0, display: 'grid', gap: '8px' }}>
+                            {entries.map(e => (
+                              <li key={`${e.id}-${e.from}`} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: 'var(--text-base)' }}>
+                                <Avatar name={e.name} colorKey={e.email} size={24} />
+                                <span style={{ fontWeight: 500, color: T.text }}>{e.name}</span>
+                                {showBranch && <span style={{ fontSize: 'var(--text-xs)', color: T.subtle }}>{branchName(e.branch || 'halifax')}</span>}
+                                <span style={{ color: T.muted, marginLeft: 'auto', textAlign: 'right' }}>{describeDays(e)}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        {(weekHols.length > 0 || waiting > 0) && (
+                          <div style={{ display: 'flex', gap: '4px 16px', flexWrap: 'wrap', fontSize: 'var(--text-xs)', color: T.subtle, marginTop: '10px' }}>
+                            {weekHols.length > 0 && <span>Holiday: {weekHols.map(h => `${h.name}, ${formatDate(h.date, { weekday: 'short', month: 'short', day: 'numeric' })}`).join('; ')}</span>}
+                            {waiting > 0 && (
+                              <button type="button" className="il-link-subtle" onClick={() => setSubView('requests')}
+                                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit', color: T.warning }}>
+                                {waiting} pending request{waiting === 1 ? '' : 's'} not included yet
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </section>
+            )}
           </div>
         )}
 
@@ -1185,40 +1216,7 @@ ${extra}${appLink('/', 'See it in your portal')}`
               </span>
             )
           return (
-            <div style={{ display: 'grid', gap: '16px', maxWidth: '860px' }}>
-              <form onSubmit={e => { e.preventDefault(); addHoliday() }} style={{ ...s.card, padding: '18px 20px' }}>
-                <h2 style={{ ...T.type.h2, fontSize: 'var(--text-md)', margin: '0 0 6px', color: T.text }}>Add a holiday</h2>
-                <p style={{ fontSize: 'var(--text-sm)', color: T.muted, margin: '0 0 14px', lineHeight: 1.55 }}>
-                  For anything beyond the handbook list, like an extra day the office closes. Holidays are skipped when business days are counted, for the branches they apply to.
-                </p>
-                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) 170px', gap: '0 12px' }}>
-                  <Field label="Name"><input placeholder="e.g. Office closure" value={newHolidayName} onChange={e => setNewHolidayName(e.target.value)} /></Field>
-                  <Field label="Date"><input type="date" value={newHolidayDate} onChange={e => setNewHolidayDate(e.target.value)} /></Field>
-                </div>
-                <fieldset style={{ border: 'none', padding: 0, margin: '0 0 16px' }}>
-                  <legend style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: T.muted, marginBottom: '6px', padding: 0 }}>Applies to</legend>
-                  <div style={{ display: 'flex', gap: '6px 16px', flexWrap: 'wrap' }}>
-                    {PROVINCES.map(p => (
-                      <label key={p.code} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: 'var(--text-base)', color: T.text, cursor: 'pointer' }}>
-                        <input type="checkbox" checked={newHolidayProvinces.includes(p.code)} style={{ width: '15px', height: '15px', accentColor: 'var(--brand)' }}
-                          onChange={e => setNewHolidayProvinces(prev => e.target.checked ? ALL_PROVINCES.filter(c => c === p.code || prev.includes(c)) : prev.filter(c => c !== p.code))} />
-                        {p.branches} <span style={{ color: T.subtle, fontSize: 'var(--text-sm)' }}>({p.code})</span>
-                      </label>
-                    ))}
-                  </div>
-                </fieldset>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
-                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: 'var(--text-base)', color: T.muted, cursor: 'pointer' }}>
-                    <input type="checkbox" checked={newHolidayRepeats} onChange={e => setNewHolidayRepeats(e.target.checked)} style={{ width: '15px', height: '15px', cursor: 'pointer', accentColor: 'var(--brand)' }} />
-                    Same date every year
-                  </label>
-                  <Button type="submit" busy={savingHoliday} busyLabel="Adding…" disabled={!newHolidayName.trim() || !newHolidayDate || newHolidayProvinces.length === 0}>Add holiday</Button>
-                </div>
-                <p style={{ fontSize: 'var(--text-xs)', color: T.subtle, margin: '12px 0 0', lineHeight: 1.5 }}>
-                  Adding or removing a holiday recounts every pending request automatically. Approved requests keep the count they were approved with.
-                </p>
-              </form>
-
+            <div style={{ display: 'grid', gap: '14px', maxWidth: '860px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 <Segmented size="sm" label="Holiday year" value={holidayYear} onChange={setHolidayYear}
                   options={years.map(y => ({ value: y, label: String(y) }))} />
@@ -1227,6 +1225,7 @@ ${extra}${appLink('/', 'See it in your portal')}`
                     Add {holidayYear}'s handbook holidays
                   </Button>
                 )}
+                <Button size="sm" variant="secondary" style={{ marginLeft: 'auto' }} onClick={() => setHolidayFormOpen(true)}>Add a holiday</Button>
               </div>
 
               <div style={{ ...s.card, overflow: 'hidden' }}>
@@ -1245,7 +1244,7 @@ ${extra}${appLink('/', 'See it in your portal')}`
                     {yearGroups.map(g => (
                       <div key={g.key} className="il-task-row" style={isMobile
                         ? { display: 'grid', gap: '6px', padding: '13px 16px', borderBottom: `1px solid ${T.borderSubtle}` }
-                        : s.tRow(HOL_COLS)}>
+                        : { ...s.tRow(HOL_COLS), opacity: g.date < TODAY ? 0.6 : 1 }}>
                         <div style={{ minWidth: 0 }}>
                           <div style={{ fontWeight: 500, color: T.text }}>{g.name}</div>
                           {(g.note || g.repeats || isMobile) && (
@@ -1267,7 +1266,7 @@ ${extra}${appLink('/', 'See it in your portal')}`
                 )}
               </div>
               <p style={{ fontSize: 'var(--text-xs)', color: T.subtle, margin: '0 2px', lineHeight: 1.6 }}>
-                NS is Halifax, NB is Moncton and Saint John, NL is St. John's, PE is Charlottetown. Stat is a statutory holiday and Obs an observed one, as in the handbook. A fixed-date holiday that lands on a weekend is given on the Monday after, marked "(observed)". Regatta Day is weather-dependent: if it moves, change it here.
+                NS is Halifax, NB is Moncton and Saint John, NL is St. John's, PE is Charlottetown. Stat is a statutory holiday and Obs an observed one, as in the handbook. A fixed-date holiday on a weekend is given the Monday after. Regatta Day depends on the weather: if it moves, change it here. Changing holidays recounts pending requests.
               </p>
             </div>
           )
@@ -1301,6 +1300,44 @@ ${extra}${appLink('/', 'See it in your portal')}`
           <p style={{ fontSize: 'var(--text-sm)', color: T.muted, margin: 0, lineHeight: 1.55 }}>
             If HR has sent next year's list, use Import HR list instead: it sets each person's own numbers.
           </p>
+        </Modal>
+      )}
+
+      {holidayFormOpen && (
+        <Modal
+          title="Add a holiday"
+          description="For anything beyond the handbook list, like an extra day the office closes. It's skipped when business days are counted, for the branches it applies to."
+          onClose={() => setHolidayFormOpen(false)}
+          busy={savingHoliday}
+          maxWidth={520}
+          footer={(
+            <>
+              <Button variant="secondary" onClick={() => setHolidayFormOpen(false)} disabled={savingHoliday}>Cancel</Button>
+              <Button busy={savingHoliday} busyLabel="Adding…" disabled={!newHolidayName.trim() || !newHolidayDate || newHolidayProvinces.length === 0}
+                onClick={async () => { if (await addHoliday()) setHolidayFormOpen(false) }}>Add holiday</Button>
+            </>
+          )}
+        >
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) 170px', gap: '0 12px' }}>
+            <Field label="Name"><input placeholder="e.g. Office closure" value={newHolidayName} onChange={e => setNewHolidayName(e.target.value)} /></Field>
+            <Field label="Date"><input type="date" value={newHolidayDate} onChange={e => setNewHolidayDate(e.target.value)} /></Field>
+          </div>
+          <fieldset style={{ border: 'none', padding: 0, margin: '0 0 16px' }}>
+            <legend style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: T.muted, marginBottom: '6px', padding: 0 }}>Applies to</legend>
+            <div style={{ display: 'flex', gap: '6px 16px', flexWrap: 'wrap' }}>
+              {PROVINCES.map(p => (
+                <label key={p.code} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: 'var(--text-base)', color: T.text, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={newHolidayProvinces.includes(p.code)} style={{ width: '15px', height: '15px', accentColor: 'var(--brand)' }}
+                    onChange={e => setNewHolidayProvinces(prev => e.target.checked ? ALL_PROVINCES.filter(c => c === p.code || prev.includes(c)) : prev.filter(c => c !== p.code))} />
+                  {p.branches} <span style={{ color: T.subtle, fontSize: 'var(--text-sm)' }}>({p.code})</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: 'var(--text-base)', color: T.muted, cursor: 'pointer' }}>
+            <input type="checkbox" checked={newHolidayRepeats} onChange={e => setNewHolidayRepeats(e.target.checked)} style={{ width: '15px', height: '15px', cursor: 'pointer', accentColor: 'var(--brand)' }} />
+            Same date every year
+          </label>
         </Modal>
       )}
 
