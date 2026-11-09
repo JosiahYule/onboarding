@@ -46,6 +46,7 @@ const ACTION_LABELS = {
   time_off_logged: 'Time off logged by HR',
   time_off_balance_updated: 'Time off balance updated',
   time_off_year_started: 'Time off year set up',
+  time_off_tracking_changed: 'Time off tracking changed',
   ticket_submitted: 'Tech ticket submitted',
   ticket_updated: 'Tech ticket updated',
   // Kept so older log entries still read well.

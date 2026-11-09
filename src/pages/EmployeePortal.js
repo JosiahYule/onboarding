@@ -150,7 +150,7 @@ export default function EmployeePortal({ session, userProfile, onSwitchToAdmin }
       // Always fetch the employee record so we have name/role in all cases
       const { data: empData } = await supabase
         .from('employees')
-        .select('id, full_name, hire_date, brand, role_id, manager_id, roles(name)')
+        .select('id, full_name, hire_date, brand, role_id, manager_id, takes_time_off, roles(name)')
         .eq('id', userProfile.employee_id)
         .single()
       if (empData) setEmployee(empData)
@@ -702,7 +702,8 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
             instance && { id: 'documents', label: 'My documents', badge: unsignedDocCount || null },
             { id: 'company-resources', label: 'Company resources' },
             // Unreleased features are labelled rather than silently greyed out.
-            { id: 'time-off', label: 'Time off', disabled: !FEATURES.employeeTimeOff, badge: FEATURES.employeeTimeOff ? null : 'Soon' },
+            // Partners, casual staff without vacation and former staff don't get the tab.
+            employee?.takes_time_off !== false && { id: 'time-off', label: 'Time off', disabled: !FEATURES.employeeTimeOff, badge: FEATURES.employeeTimeOff ? null : 'Soon' },
             { id: 'technical-tickets', label: 'Tech support', disabled: !FEATURES.techSupport, badge: FEATURES.techSupport ? null : 'Soon' },
           ].filter(Boolean)}
         />
