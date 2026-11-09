@@ -975,17 +975,19 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
 
                   <div style={{ marginBottom: '20px' }}>
                     <label htmlFor="il-tor-manager" style={styles.fieldLabel}>Direct manager <span aria-hidden="true" style={{ color: T.danger }}>*</span></label>
-                    <select id="il-tor-manager" className="il-input" required aria-describedby="il-tor-manager-hint"
+                    <select id="il-tor-manager" className="il-input" required
+                      aria-describedby={torManagersError || (!torManagersLoading && torManagers.length === 0) ? 'il-tor-manager-hint' : undefined}
                       value={torManagerId} disabled={torManagersLoading || torManagersError || torManagers.length === 0}
                       onChange={e => setTorManagerId(e.target.value)}>
                       <option value="">{torManagersLoading ? 'Loading managers…' : 'Select your direct manager'}</option>
                       {torManagers.map(m => <option key={m.manager_id} value={m.manager_id}>{m.full_name}</option>)}
                     </select>
-                    <div id="il-tor-manager-hint" className="il-field-hint" data-tone={torManagersError ? 'error' : 'muted'} role={torManagersError ? 'alert' : undefined}>
-                      {torManagersError ? <>Couldn’t load the manager list. <button type="button" className="il-link-subtle" onClick={fetchTimeOffData}>Try again</button></>
-                        : !torManagersLoading && torManagers.length === 0 ? 'No direct managers are available. Please contact HR.'
-                        : 'Choose the person who directly manages your work. This choice is saved with your request.'}
-                    </div>
+                    {(torManagersError || (!torManagersLoading && torManagers.length === 0)) && (
+                      <div id="il-tor-manager-hint" className="il-field-hint" data-tone={torManagersError ? 'error' : 'muted'} role={torManagersError ? 'alert' : undefined}>
+                        {torManagersError ? <>Couldn’t load the manager list. <button type="button" className="il-link-subtle" onClick={fetchTimeOffData}>Try again</button></>
+                          : 'No direct managers are available. Please contact HR.'}
+                      </div>
+                    )}
                   </div>
 
                   <div style={{ marginBottom: '20px' }}>
