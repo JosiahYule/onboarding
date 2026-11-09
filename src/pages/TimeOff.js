@@ -126,6 +126,13 @@ function hasNoEntitlement(bal) {
   return !bal || (Number(bal.total_days) === 0 && Number(bal.care_days) === 0)
 }
 
+// Partners, casual staff without vacation and former staff are marked as not
+// taking time off: they stay out of Balances, the bulk shortcut and "Log time
+// off", and are listed separately so they can be switched back on.
+function takesTimeOff(emp) {
+  return emp.takes_time_off !== false
+}
+
 // The holiday table has one row per province (or one row for every branch).
 // For showing them, rows for the same day and name are merged into one, with
 // the provinces it applies to and whether it's statutory or observed in each.
@@ -232,7 +239,7 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
         `)
         .order('created_at', { ascending: false }),
       supabase.from('time_off_balances').select('*'),
-      supabase.from('employees').select('id, full_name, email, branch, hire_date').order('full_name'),
+      supabase.from('employees').select('id, full_name, email, branch, hire_date, takes_time_off').order('full_name'),
     ])
     const err = reqRes.error || balRes.error || empRes.error
     if (err) showToast(handleSupabaseError(err, 'Failed to load time off.'), 'error')
@@ -406,12 +413,23 @@ ${extra}${appLink('/', 'See it in your portal')}`
     await fetchCore()
   }
 
+  // Takes someone out of (or back into) time off tracking. Their requests and
+  // balances are kept either way.
+  async function setTakesTimeOff(emp, value) {
+    const { error } = await supabase.from('employees').update({ takes_time_off: value }).eq('id', emp.id)
+    if (error) { showToast(handleSupabaseError(error, 'Failed to save.'), 'error'); return }
+    logAudit('time_off_tracking_changed', 'employee', emp.id, { employee: emp.full_name, takes_time_off: value })
+    showToast(value ? `${emp.full_name} is back on Balances.` : `${emp.full_name} won't appear on Balances.`)
+    setEditing(null)
+    await fetchCore()
+  }
+
   async function applyBulkEntitlement() {
     const days = bulkDays === '' ? 0 : parseFloat(bulkDays)
     const care = bulkCare === '' ? 0 : parseFloat(bulkCare)
     if ([days, care].some(v => isNaN(v) || v < 0) || days + care === 0) { showToast('Enter a number of days above 0.', 'error'); return }
     const y = String(balYear)
-    const targets = employees.filter(e => hasNoEntitlement(balanceIndex[e.id]?.[y]))
+    const targets = employees.filter(e => takesTimeOff(e) && hasNoEntitlement(balanceIndex[e.id]?.[y]))
     if (targets.length === 0) return
     setBulkSaving(true)
     const values = { total_days: days, care_days: care }
@@ -685,6 +703,7 @@ ${extra}${appLink('/', 'See it in your portal')}`
   // ── Balances: derived rows for the chosen year ──
   const balY = String(balYear)
   const balanceRows = employees
+    .filter(takesTimeOff)
     .filter(e => !balSearch || e.full_name.toLowerCase().includes(balSearch.toLowerCase()) || (e.email || '').toLowerCase().includes(balSearch.toLowerCase()))
     .map(emp => {
       const bal = balanceIndex[emp.id]?.[balY] || null
@@ -697,7 +716,8 @@ ${extra}${appLink('/', 'See it in your portal')}`
         requests: empReqs.filter(r => Number(yearSplitOf(r)[balY]) > 0 || r.start_date.startsWith(balY)).sort((a, b) => (a.start_date < b.start_date ? 1 : -1)),
       }
     })
-  const missingCount = employees.filter(e => hasNoEntitlement(balanceIndex[e.id]?.[balY])).length
+  const missingCount = employees.filter(e => takesTimeOff(e) && hasNoEntitlement(balanceIndex[e.id]?.[balY])).length
+  const notTracked = employees.filter(e => !takesTimeOff(e))
   const prevYearCount = allBalances.filter(b => Number(b.year) === balYear - 1).length
 
   const pendingCount = requests.filter(r => r.status === TIME_OFF_STATUS.PENDING).length
@@ -924,6 +944,11 @@ ${extra}${appLink('/', 'See it in your portal')}`
                       <div style={{ display: 'flex', gap: '6px' }}>
                         <Button size="xs" type="submit" busy={savingBalance} busyLabel="Saving…">Save</Button>
                         <Button size="xs" variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
+                        <Button size="xs" variant="ghost" style={{ marginLeft: 'auto', color: T.muted }} disabled={savingBalance}
+                          onClick={() => setTakesTimeOff(row.employee, false)}
+                          title="For partners, casual staff without vacation, or someone who has left">
+                          Doesn't take time off
+                        </Button>
                       </div>
                     </form>
                   )
@@ -979,6 +1004,22 @@ ${extra}${appLink('/', 'See it in your portal')}`
                   )
                 })}
               </div>
+            )}
+            {!loading && notTracked.length > 0 && (
+              <details style={{ marginTop: '14px' }}>
+                <summary style={{ cursor: 'pointer', fontSize: 'var(--text-sm)', color: T.muted, padding: '4px 2px' }}>
+                  Not tracked ({notTracked.length}): partners, casual staff and people who have left
+                </summary>
+                <div style={{ ...s.card, overflow: 'hidden', marginTop: '8px' }}>
+                  {notTracked.map(emp => (
+                    <div key={emp.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 16px', borderBottom: `1px solid ${T.borderSubtle}` }}>
+                      <Avatar name={emp.full_name} colorKey={emp.email} size={28} />
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 'var(--text-base)', color: T.text }}>{emp.full_name}</span>
+                      <Button size="xs" variant="secondary" onClick={() => setTakesTimeOff(emp, true)}>Track time off</Button>
+                    </div>
+                  ))}
+                </div>
+              </details>
             )}
             <p style={{ fontSize: 'var(--text-xs)', color: T.subtle, margin: '12px 2px 0', lineHeight: 1.6, maxWidth: '720px' }}>
               Left = allowance − used − pending. Personal / Vacation requests come out of Vacation and Care Day requests out of Care days; other types are tracked but don't change either. Unused days don't carry over.
@@ -1352,7 +1393,7 @@ ${extra}${appLink('/', 'See it in your portal')}`
           <Field label="Employee" required>
             <select value={logForm.employeeId} onChange={e => setLogForm(f => ({ ...f, employeeId: e.target.value }))}>
               <option value="">Choose…</option>
-              {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.full_name}</option>)}
+              {employees.filter(takesTimeOff).map(emp => <option key={emp.id} value={emp.id}>{emp.full_name}</option>)}
             </select>
           </Field>
           <div style={{ marginBottom: '18px' }}>
