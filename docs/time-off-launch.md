@@ -16,7 +16,7 @@ Read from the live forms on November 9, 2026:
 
 Keep production staff names, email addresses and recipient mappings out of public source control. Provision `time_off_managers` separately for a new environment. The schema migration contains no production roster seed data.
 
-The employee's saved profile manager is preselected when they are an available choice. Employees can select a different direct manager for the request. A selection is required; the server validates the company, roster, active status and self-selection. Manager accounts do not need portal logins to appear in the list. A disabled login is excluded.
+The employee's saved profile manager is preselected when they are an available choice. Employees can select a different direct manager for the request. The new employee UI requires a selection; the server validates the company, roster, active status and self-selection. During rollout, older clients and HR imports can omit the new field so the deployed portal stays compatible until the UI is published. Such requests remain unassigned and never guess a manager recipient. Manager accounts do not need portal logins to appear in the list. A disabled login is excluded.
 
 The request stores `direct_manager_id` and a server-derived `direct_manager_name`. It never updates `employees.manager_id`, changes access roles or grants managers access to other employees' records. HR sees the choice in request details; the employee sees it in request history. Old requests are not assigned a manager retrospectively.
 

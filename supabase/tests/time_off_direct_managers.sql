@@ -76,7 +76,6 @@ begin
        or v_recipients->>'manager_email'<>'selected-manager@example.test' then raise exception 'HR/selected-manager recipients are incorrect'; end if;
 
     for v_bad in select * from (values
-      ('missing',null::uuid,date '2027-01-07'),
       ('wrong company',v_sister_a,date '2027-01-07'),
       ('self',v_employee,date '2027-01-07'),
       ('before January',v_selected,date '2026-12-21')
@@ -88,6 +87,10 @@ begin
       exception when invalid_parameter_value then null;
       end;
     end loop;
+    -- Existing clients can still omit the new field during staged rollout.
+    insert into public.time_off_requests(employee_id,start_date,end_date,business_days,type,status)
+    values(v_employee,'2026-12-22','2026-12-22',1,'other','pending') returning id into v_request;
+    if public.get_time_off_request_recipients(v_request)->>'manager_email' is not null then raise exception 'Legacy request guessed a manager'; end if;
     begin
       perform public.get_time_off_request_recipients(v_other_request);
       raise exception 'Another employee''s recipients were exposed';
