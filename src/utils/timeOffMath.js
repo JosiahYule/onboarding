@@ -115,6 +115,21 @@ function daysBetween(a, b) {
   return Math.round((Date.UTC(by, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / 86400000)
 }
 
+// Other people off during a request's dates, for HR deciding on it. Approved
+// and still-pending requests are listed apart, so HR can spot two pending
+// requests that clash before approving both. Names are first names, each
+// listed once.
+export function othersOff(req, requests) {
+  const firstNames = list => [...new Set(list.map(r => r.employee?.full_name?.split(' ')[0] || '?'))]
+  const overlapping = (requests || []).filter(r =>
+    r.id !== req.id && r.employee_id !== req.employee_id &&
+    r.start_date <= req.end_date && r.end_date >= req.start_date)
+  return {
+    approved: firstNames(overlapping.filter(r => r.status === TIME_OFF_STATUS.APPROVED)),
+    pending: firstNames(overlapping.filter(r => r.status === TIME_OFF_STATUS.PENDING)),
+  }
+}
+
 // An employee's own pending or approved request that overlaps these dates.
 // A morning and an afternoon on the same day don't clash, so someone can take
 // a half-day Care Day and a half-day of vacation together. `portion` is the

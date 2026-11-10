@@ -37,7 +37,7 @@ export default function TimeOffBalanceCard({ summaries, year, years, onYearChang
                     {formatDays(remaining).slice(0, -1)}
                   </span>
                   <span style={{ fontSize: T.fontSize.sm, color: over ? T.danger : T.muted }}>
-                    {remaining === 1 ? 'day' : 'days'} {over ? 'over allowance' : 'remaining'}
+                    {remaining === 1 ? 'day' : 'days'} {over ? 'over allowance' : sum.pending > 0 ? 'left after pending requests' : 'remaining'}
                   </span>
                 </div>
                 {sum.available > 0 && (
@@ -48,9 +48,13 @@ export default function TimeOffBalanceCard({ summaries, year, years, onYearChang
                   </div>
                 )}
                 <dl style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '8px', margin: 0 }}>
-                  {[['Allowance', sum.available], ['Used', sum.used], ['Pending', sum.pending]].map(([label, value]) => (
+                  {/* Used and Pending carry the bar's colours, so the bar needs no separate key. */}
+                  {[['Allowance', sum.available, null], ['Used', sum.used, T.text], ['Pending', sum.pending, T.warning]].map(([label, value, swatch]) => (
                     <div key={label}>
-                      <dt style={{ fontSize: T.fontSize.sm, color: T.subtle, lineHeight: 1.4 }}>{label}</dt>
+                      <dt style={{ fontSize: T.fontSize.sm, color: T.subtle, lineHeight: 1.4, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {swatch && sum.available > 0 && <span aria-hidden="true" style={{ width: '8px', height: '8px', borderRadius: '2px', background: swatch, flexShrink: 0 }} />}
+                        {label}
+                      </dt>
                       <dd style={{ margin: '4px 0 0', fontSize: T.fontSize.md, lineHeight: 1.4, fontWeight: 500, fontVariantNumeric: 'tabular-nums', color: label === 'Pending' && value > 0 ? T.warning : T.text }}>
                         {formatDays(value).slice(0, -1)}
                       </dd>

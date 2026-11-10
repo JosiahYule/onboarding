@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   countsAgainstBalance, balanceBucket, yearSplitOf, summarizeYear, remainingIfApproved,
-  findOverlap, employeeCanCancel, relevantYears, formatDays, workFromWhereverHint,
+  findOverlap, employeeCanCancel, relevantYears, formatDays, workFromWhereverHint, othersOff,
 } from './timeOffMath'
 
 const vac = (o) => ({ id: o.id || 'r', type: 'personal_vacation', status: 'pending', ...o })
@@ -132,5 +132,27 @@ describe('formatDays', () => {
     expect(formatDays(5)).toBe('5d')
     expect(formatDays('4.0')).toBe('4d')
     expect(formatDays(2.5)).toBe('2.5d')
+  })
+})
+
+describe('othersOff', () => {
+  const person = (id, name) => ({ employee_id: id, employee: { full_name: name } })
+  const req = { id: 'a', ...person('e1', 'Alex Morgan'), start_date: '2027-01-11', end_date: '2027-01-15', status: 'pending' }
+  it('lists approved and pending overlaps separately, by first name, once each', () => {
+    const others = [
+      { id: 'b', ...person('e2', 'Jordan Lee'), start_date: '2027-01-13', end_date: '2027-01-13', status: 'pending' },
+      { id: 'c', ...person('e3', 'Casey Nguyen'), start_date: '2027-01-08', end_date: '2027-01-11', status: 'approved' },
+      { id: 'd', ...person('e3', 'Casey Nguyen'), start_date: '2027-01-14', end_date: '2027-01-14', status: 'approved' },
+    ]
+    expect(othersOff(req, [req, ...others])).toEqual({ approved: ['Casey'], pending: ['Jordan'] })
+  })
+  it('ignores the same person, other dates, and denied or cancelled requests', () => {
+    const others = [
+      { id: 'b', ...person('e1', 'Alex Morgan'), start_date: '2027-01-12', end_date: '2027-01-12', status: 'approved' },
+      { id: 'c', ...person('e2', 'Jordan Lee'), start_date: '2027-01-16', end_date: '2027-01-20', status: 'approved' },
+      { id: 'd', ...person('e3', 'Sam Patel'), start_date: '2027-01-12', end_date: '2027-01-12', status: 'denied' },
+      { id: 'e', ...person('e4', 'Riley Chen'), start_date: '2027-01-12', end_date: '2027-01-12', status: 'cancelled' },
+    ]
+    expect(othersOff(req, others)).toEqual({ approved: [], pending: [] })
   })
 })
