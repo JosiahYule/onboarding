@@ -563,7 +563,14 @@ function AuditLogTab({ isMobile }) {
 const SETTING_META = {
   hr_notification_email: { label: 'HR notification email', hint: 'Receives new-onboarding, completion and time-off notifications.', type: 'email' },
   tech_support_email: { label: 'Tech support email', hint: 'Receives tech support tickets from the employee portal.', type: 'email' },
-  anniversary_notification_email: { label: 'Work anniversary email', hint: "Gets an email about 30 days before each person's start-date anniversary. Leave blank to send none.", type: 'email' },
+  anniversary_notification_email: { label: 'Work anniversary emails', hint: "Get an email about 30 days before each person's start-date anniversary. Separate several addresses with commas. Leave blank to send none.", type: 'email', multiple: true },
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+// "a@x.ca; b@y.ca,  c@z.ca" -> ['a@x.ca', 'b@y.ca', 'c@z.ca']
+function splitEmails(value) {
+  return value.split(/[,;\s]+/).map(e => e.trim()).filter(Boolean)
 }
 
 function SystemSettingsTab() {
@@ -591,8 +598,17 @@ function SystemSettingsTab() {
 
   async function handleSave(key) {
     const meta = SETTING_META[key]
-    const value = (values[key] ?? '').trim()
-    if (meta?.type === 'email' && value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+    let value = (values[key] ?? '').trim()
+    if (meta?.type === 'email' && meta.multiple) {
+      const emails = [...new Set(splitEmails(value))]
+      const bad = emails.find(e => !EMAIL_RE.test(e))
+      if (bad) {
+        showToast(`"${bad}" isn't a valid email address.`, 'error')
+        return
+      }
+      value = emails.join(', ')
+      setValues(prev => ({ ...prev, [key]: value }))
+    } else if (meta?.type === 'email' && value && !EMAIL_RE.test(value)) {
       showToast('Enter a valid email address.', 'error')
       return
     }
@@ -631,7 +647,7 @@ function SystemSettingsTab() {
             style={{ padding: '16px 0 0', borderBottom: i < settings.length - 1 ? `1px solid ${T.borderSubtle}` : 'none' }}>
             <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
               <Field label={labelFor(setting.key)} hint={SETTING_META[setting.key]?.hint} style={{ flex: 1 }}>
-                <input type={SETTING_META[setting.key]?.type || 'text'} value={values[setting.key] ?? ''}
+                <input type={SETTING_META[setting.key]?.multiple ? 'text' : SETTING_META[setting.key]?.type || 'text'} value={values[setting.key] ?? ''}
                   onChange={e => setValues(prev => ({ ...prev, [setting.key]: e.target.value }))} />
               </Field>
               {/* Label height (~21px) + half the height difference to the input */}

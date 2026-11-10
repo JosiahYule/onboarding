@@ -8,7 +8,9 @@ import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 // Each anniversary is mentioned once: public.anniversary_notifications records
 // what was sent. Anyone whose anniversary is 30 days out shows up the day they
 // enter that window; if a day is missed, the next run picks them up. Nothing
-// is sent while the `anniversary_notification_email` setting is empty.
+// is sent while the `anniversary_notification_email` setting is empty. The
+// setting can hold several addresses separated by commas; everyone listed gets
+// the same email.
 //
 // Who may call it (anything else gets 403):
 // - the cron job, which sends an `x-cron-token` header checked against the
@@ -99,8 +101,8 @@ Deno.serve(async (req: Request) => {
     if (!(await isAuthorized(req, admin, serviceKey))) return json({ error: 'Forbidden' }, 403)
 
     const { data: setting } = await admin.from('system_settings').select('value').eq('key', 'anniversary_notification_email').maybeSingle()
-    const to = String(setting?.value ?? '').trim()
-    if (!to) return json({ sent: 0, skipped: 'anniversary_notification_email is not set' })
+    const to = [...new Set(String(setting?.value ?? '').split(/[,;\s]+/).map(e => e.trim()).filter(Boolean))]
+    if (to.length === 0) return json({ sent: 0, skipped: 'anniversary_notification_email is not set' })
 
     const { data: due, error } = await admin.rpc('due_anniversary_reminders')
     if (error) return json({ error: error.message }, 500)
@@ -116,7 +118,7 @@ Deno.serve(async (req: Request) => {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: 'Integrated Launch <onboarding@integratedstaffing.ca>', to: [to], subject, html: buildEmail(list) }),
+      body: JSON.stringify({ from: 'Integrated Launch <onboarding@integratedstaffing.ca>', to, subject, html: buildEmail(list) }),
     })
     if (!res.ok) {
       // Nothing is marked as sent, so tomorrow's run tries again.
@@ -124,7 +126,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const items = list.map(d => ({ employee_id: d.employee_id, anniversary_date: d.anniversary_date, years: d.years }))
-    const { error: markErr } = await admin.rpc('mark_anniversary_reminders_sent', { p_items: items, p_sent_to: to })
+    const { error: markErr } = await admin.rpc('mark_anniversary_reminders_sent', { p_items: items, p_sent_to: to.join(', ') })
     if (markErr) return json({ sent: list.length, warning: `Sent, but not recorded: ${markErr.message}` })
     return json({ sent: list.length })
   } catch (err) {
