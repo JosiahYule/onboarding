@@ -973,6 +973,29 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
                     </div>
                   )}
 
+                  {/* Flexibility: right after the dates it's about. Short choices sit
+                      side by side and wrap on a phone. */}
+                  <div style={{ marginBottom: '20px' }}>
+                    <span id="il-tor-flex" style={styles.fieldLabel}>How flexible are these dates? <span aria-hidden="true" style={{ color: T.danger }}>*</span></span>
+                    <div role="radiogroup" aria-labelledby="il-tor-flex" style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                      {FLEXIBILITY_OPTIONS.map((o, i) => {
+                        const active = torFlexibility === o.value
+                        return (
+                          <label key={o.value} className="il-row"
+                            style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', cursor: 'pointer', borderRadius: T.radiusMd, background: active ? T.brandLight : 'transparent', boxShadow: active ? `inset 0 0 0 1px ${T.brand}` : 'none' }}>
+                            <input type="radio" name="Flexibility" value={o.value} checked={active} onChange={() => setTorFlexibility(o.value)}
+                              style={{ width: '16px', height: '16px', margin: 0, accentColor: 'var(--brand)', cursor: 'pointer' }} />
+                            <span style={{ fontSize: 'var(--text-base)', color: T.text, fontWeight: active ? 500 : 400 }}>{o.label}</span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                    {torFlexibility === 'other' && (
+                      <input type="text" aria-label="Describe your flexibility" style={{ ...styles.fieldInput, marginTop: '8px' }}
+                        placeholder="Please describe..." value={torFlexibilityNote} onChange={e => setTorFlexibilityNote(e.target.value)} />
+                    )}
+                  </div>
+
                   {/* Type of leave */}
                   <div style={{ marginBottom: '20px' }}>
                     <span id="il-tor-type" style={styles.fieldLabel}>Type of leave</span>
@@ -1004,28 +1027,6 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
                     <textarea id="il-tor-notes" style={{ ...styles.fieldInput, resize: 'vertical', minHeight: '64px' }}
                       placeholder="Anything HR should know, like coverage you've arranged"
                       value={torNotes} onChange={e => setTorNotes(e.target.value)} />
-                  </div>
-
-                  {/* Flexibility */}
-                  <div style={{ marginBottom: '20px' }}>
-                    <span id="il-tor-flex" style={styles.fieldLabel}>How flexible are these dates? <span aria-hidden="true" style={{ color: T.danger }}>*</span></span>
-                    <div role="radiogroup" aria-labelledby="il-tor-flex" style={{ display: 'grid', gap: '2px' }}>
-                      {FLEXIBILITY_OPTIONS.map((o, i) => {
-                        const active = torFlexibility === o.value
-                        return (
-                          <label key={o.value} className="il-row"
-                            style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', cursor: 'pointer', borderRadius: T.radiusMd, background: active ? T.brandLight : 'transparent', boxShadow: active ? `inset 0 0 0 1px ${T.brand}` : 'none' }}>
-                            <input type="radio" name="Flexibility" value={o.value} checked={active} onChange={() => setTorFlexibility(o.value)}
-                              style={{ width: '16px', height: '16px', margin: 0, accentColor: 'var(--brand)', cursor: 'pointer' }} />
-                            <span style={{ fontSize: 'var(--text-base)', color: T.text, fontWeight: active ? 500 : 400 }}>{o.label}</span>
-                          </label>
-                        )
-                      })}
-                    </div>
-                    {torFlexibility === 'other' && (
-                      <input type="text" aria-label="Describe your flexibility" style={{ ...styles.fieldInput, marginTop: '8px' }}
-                        placeholder="Please describe..." value={torFlexibilityNote} onChange={e => setTorFlexibilityNote(e.target.value)} />
-                    )}
                   </div>
 
                   {torAfter.filter(a => a.hasBalance && a.remaining < 0).map(a => (

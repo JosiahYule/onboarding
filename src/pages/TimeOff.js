@@ -10,7 +10,7 @@ import { logAudit } from '../utils/auditLog'
 import { useWindowSize } from '../hooks/useWindowSize'
 import { getToday, getCurrentYear, TIME_OFF_STATUS, BRANCHES, PROVINCES, branchName, branchProvince } from '../config'
 import { TYPE_LABELS, StatusPill, TypeIcon, fmtDate, fmtDateRange } from '../utils/timeOffShared'
-import { countsAgainstBalance, balanceBucket, BUCKETS, summarizeYear, remainingIfApproved, yearSplitOf, findOverlap, formatDays, workFromWhereverHint } from '../utils/timeOffMath'
+import { countsAgainstBalance, balanceBucket, BUCKETS, summarizeYear, remainingIfApproved, yearSplitOf, findOverlap, formatDays, workFromWhereverHint, othersOff } from '../utils/timeOffMath'
 import { parseImportList } from '../utils/importList'
 import { escapeHtml } from '../utils/escapeHtml'
 import { sendTimeOffEmail, appLink } from '../utils/emailNotify'
@@ -183,6 +183,7 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
   const [reviewNotes, setReviewNotes] = useState({})
   const [reviewingId, setReviewingId] = useState(null)
   const [confirmCancel, setConfirmCancel] = useState(null)
+  const [denyReq, setDenyReq] = useState(null)
   const [expandedEmployeeId, setExpandedEmployeeId] = useState(null)
   const [calYear, setCalYear] = useState(new Date().getFullYear())
   const [calMonth, setCalMonth] = useState(new Date().getMonth())
@@ -343,12 +344,6 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
     return remainingIfApproved(req, balanceIndex[req.employee_id] || {}, requestsByEmployee[req.employee_id] || [])
   }
 
-  function getOverlapNames(req) {
-    return requests
-      .filter(r => r.id !== req.id && r.status === TIME_OFF_STATUS.APPROVED && r.employee_id !== req.employee_id && r.start_date <= req.end_date && r.end_date >= req.start_date)
-      .map(r => r.employee?.full_name?.split(' ')[0] || '?')
-  }
-
   function decisionEmail(req, verb, notes, extra = '') {
     return `<p>Hi ${escapeHtml(req.employee.full_name)},</p>
 <p>Your time off request has been <strong>${verb}</strong>.</p>
@@ -391,6 +386,7 @@ ${extra}${appLink('/', 'See it in your portal')}`
       : null
     showToast(emailed === false ? 'Denied, but the email to the employee failed to send.' : 'Request denied.', emailed === false ? 'warning' : 'success')
     setReviewingId(null)
+    setDenyReq(null)
     await fetchCore()
   }
 
@@ -618,14 +614,14 @@ ${extra}${appLink('/', 'See it in your portal')}`
   // A request waiting for Shelley: who, when, what it leaves, then the two
   // decisions. The note to the employee only opens when it's wanted.
   function renderPendingCard(req) {
-    const overlapNames = getOverlapNames(req)
+    const overlap = othersOff(req, requests)
     const details = detailsLine(req)
     const busy = reviewingId === req.id
     const first = req.employee?.full_name?.split(' ')[0] || 'them'
     const portion = req.day_portion === 'am' ? ', morning' : req.day_portion === 'pm' ? ', afternoon' : ''
     const actions = (
       <div style={{ display: 'flex', gap: '8px', flexShrink: 0, ...(isMobile ? { marginTop: '14px' } : {}) }}>
-        <Button size="sm" variant="ghost" disabled={busy} onClick={() => denyRequest(req)} style={{ color: T.danger, flex: isMobile ? 1 : undefined }}
+        <Button size="sm" variant="ghost" disabled={busy} onClick={() => setDenyReq(req)} style={{ color: T.danger, flex: isMobile ? 1 : undefined }}
           aria-label={`Deny ${req.employee?.full_name || ''}'s request`}>Deny</Button>
         <Button size="sm" busy={busy} busyLabel="Saving…" onClick={() => approveRequest(req)} style={{ flex: isMobile ? 1 : undefined, minWidth: '96px' }}
           aria-label={`Approve ${req.employee?.full_name || ''}'s request`}>Approve</Button>
@@ -646,7 +642,8 @@ ${extra}${appLink('/', 'See it in your portal')}`
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 14px', fontSize: 'var(--text-sm)', color: T.muted, marginTop: '6px' }}>
               {balanceSummary(req)}
-              {overlapNames.length > 0 && <span style={{ color: T.warning }}>{overlapNames.join(', ')} also off</span>}
+              {overlap.approved.length > 0 && <span style={{ color: T.warning }}>Also off: {overlap.approved.join(', ')}</span>}
+              {overlap.pending.length > 0 && <span style={{ color: T.warning }}>Also waiting for approval: {overlap.pending.join(', ')}</span>}
             </div>
             {details && <div style={{ marginTop: '8px' }}>{details}</div>}
             <div style={{ marginTop: '10px' }}>
@@ -1298,6 +1295,32 @@ ${extra}${appLink('/', 'See it in your portal')}`
           onCancel={() => setConfirmCancel(null)}
         />
       )}
+
+      {denyReq && (() => {
+        const first = denyReq.employee?.full_name?.split(' ')[0] || 'them'
+        const busy = reviewingId === denyReq.id
+        return (
+          <Modal
+            title={`Deny ${first}'s request?`}
+            description={`${fmtDateRange(denyReq.start_date, denyReq.end_date)}, ${TYPE_LABELS[denyReq.type] || denyReq.type}. A denied request can't be reopened; ${first} would need to send a new one.`}
+            onClose={() => setDenyReq(null)}
+            busy={busy}
+            maxWidth={460}
+            footer={(
+              <>
+                <Button variant="secondary" onClick={() => setDenyReq(null)} disabled={busy}>Back</Button>
+                <Button variant="danger" busy={busy} busyLabel="Denying…" onClick={() => denyRequest(denyReq)}>Deny request</Button>
+              </>
+            )}
+          >
+            <Field label={`Tell ${first} why`} optional hint={`${first} sees this with the decision.`}>
+              <textarea rows={3} style={{ resize: 'vertical' }} placeholder="e.g. Two people on the desk are already off that week."
+                value={reviewNotes[denyReq.id] || ''}
+                onChange={e => setReviewNotes(prev => ({ ...prev, [denyReq.id]: e.target.value }))} />
+            </Field>
+          </Modal>
+        )
+      })()}
 
       {startYearOpen && (
         <Modal
