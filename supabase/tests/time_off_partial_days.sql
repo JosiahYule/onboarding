@@ -1,5 +1,5 @@
 -- Transactional checks for a partial first or last day on a longer request
--- (migration 20261119170000). Uses one synthetic employee and dates in 2041,
+-- (migration 20261119150519). Uses one synthetic employee and dates in 2041,
 -- away from real bookings, plus a synthetic holiday. Everything rolls back
 -- before this finishes. No Auth API, Edge Function or email is involved.
 -- Requires a database-admin connection (the SQL editor is fine).

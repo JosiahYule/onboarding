@@ -26,9 +26,9 @@ The small `time_off_managers` roster can be maintained by admins in the database
 
 A request over several days can start in the afternoon of its first day (`start_portion = 'pm'`) and end after the morning of its last day (`end_portion = 'am'`). Thursday afternoon to Friday is one request, counted as 1.5 business days. A single-day request keeps its one portion in `day_portion`, `start_portion` and `end_portion` alike, exactly as half days worked before.
 
-`time_off_year_split` takes half a day off for each partial end, in that day's own year, and only when that day is a business day in the employee's province. Approve, deny, cancel, `balance_usage` and refunds are unchanged because they all work from `year_split`. Both columns default to `'full'`, and the portal only sends them (and the matching RPC arguments) when a longer request has a partial end, so whole-day and single-half-day requests work the same before and after migration `20261119170000`.
+`time_off_year_split` takes half a day off for each partial end, in that day's own year, and only when that day is a business day in the employee's province. Approve, deny, cancel, `balance_usage` and refunds are unchanged because they all work from `year_split`. Both columns default to `'full'`, and the portal only sends them (and the matching RPC arguments) when a longer request has a partial end, so whole-day and single-half-day requests work the same before and after migration `20261119150519`.
 
-Deploy order: apply migration `20261119170000_time_off_partial_first_last_day.sql`, then publish the portal. `supabase/tests/time_off_partial_days.sql` checks the counting, the old-client path, a holiday recount and the rejected shapes, and rolls itself back.
+Deploy order: apply migration `20261119150519_time_off_partial_first_last_day.sql`, then publish the portal. `supabase/tests/time_off_partial_days.sql` checks the counting, the old-client path, a holiday recount and the rejected shapes, and rolls itself back.
 
 ## Prepared email routing
 
