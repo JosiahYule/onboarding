@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor, cleanup, act } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, cleanup, act, within } from '@testing-library/react'
 import { vi } from 'vitest'
 
 const { fixture, inserts, invoke, rpc, audit } = vi.hoisted(() => ({
@@ -118,4 +118,47 @@ test('leave before January 2027 cannot be submitted even when the date input is 
   expect(screen.getByRole('button', { name: 'Submit request' })).toBeDisabled()
   expect(screen.getByText('Choose time off on or after January 1, 2027.')).toBeInTheDocument()
   expect(inserts).toHaveLength(0)
+})
+
+test('a longer request can start in the afternoon: one request, counted by the database', async () => {
+  rpc.mockImplementation((name, args) => Promise.resolve(name === 'get_time_off_managers'
+    ? { data: fixture.managers, error: null }
+    : { data: { 2027: args?.p_start_portion === 'pm' ? 1.5 : 2 }, error: null }))
+  await openTimeOff()
+  // Same first and last day: no first/last-day choice yet.
+  await fillDatesAndFlexibility()
+  expect(screen.queryByRole('radiogroup', { name: 'Part of first day off' })).not.toBeInTheDocument()
+
+  fireEvent.change(screen.getByLabelText('First day off'), { target: { value: '2027-01-07' } })
+  fireEvent.change(screen.getByLabelText('Last day off'), { target: { value: '2027-01-08' } })
+  await screen.findByText('2', { selector: 'strong' })
+  // A whole-day stretch doesn't send the new arguments at all.
+  expect(rpc).toHaveBeenLastCalledWith('time_off_year_split', { p_start: '2027-01-07', p_end: '2027-01-08', p_half_day: false })
+
+  const firstDay = screen.getByRole('radiogroup', { name: 'Part of first day off' })
+  fireEvent.click(within(firstDay).getByRole('radio', { name: 'Afternoon only' }))
+  await screen.findByText('1.5', { selector: 'strong' })
+  expect(rpc).toHaveBeenLastCalledWith('time_off_year_split', {
+    p_start: '2027-01-07', p_end: '2027-01-08', p_half_day: false, p_start_portion: 'pm', p_end_portion: 'full',
+  })
+
+  fireEvent.click(screen.getByRole('button', { name: 'Submit request' }))
+  await screen.findByText('Request submitted.')
+  expect(inserts).toHaveLength(1)
+  expect(inserts[0]).toMatchObject({
+    start_date: '2027-01-07', end_date: '2027-01-08', day_portion: 'full', is_half_day: false,
+    start_portion: 'pm', end_portion: 'full',
+  })
+})
+
+test('a whole-day request sends no portion columns, so it works before and after the migration', async () => {
+  await openTimeOff()
+  fireEvent.change(screen.getByLabelText('First day off'), { target: { value: '2027-01-07' } })
+  fireEvent.change(screen.getByLabelText('Last day off'), { target: { value: '2027-01-08' } })
+  fireEvent.click(screen.getByRole('radio', { name: 'Firm' }))
+  await waitFor(() => expect(screen.queryByText('Counting business days…')).not.toBeInTheDocument())
+  fireEvent.click(screen.getByRole('button', { name: 'Submit request' }))
+  await screen.findByText('Request submitted.')
+  expect(inserts[0]).not.toHaveProperty('start_portion')
+  expect(inserts[0]).not.toHaveProperty('end_portion')
 })

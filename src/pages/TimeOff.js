@@ -9,8 +9,8 @@ import { handleSupabaseError } from '../utils/handleError'
 import { logAudit } from '../utils/auditLog'
 import { useWindowSize } from '../hooks/useWindowSize'
 import { getToday, getCurrentYear, TIME_OFF_STATUS, BRANCHES, PROVINCES, branchName, branchProvince } from '../config'
-import { TYPE_LABELS, StatusPill, TypeIcon, fmtDate, fmtDateRange } from '../utils/timeOffShared'
-import { countsAgainstBalance, balanceBucket, BUCKETS, summarizeYear, remainingIfApproved, yearSplitOf, findOverlap, formatDays, workFromWhereverHint, othersOff } from '../utils/timeOffMath'
+import { TYPE_LABELS, StatusPill, TypeIcon, fmtDate, fmtRequestDates } from '../utils/timeOffShared'
+import { countsAgainstBalance, balanceBucket, BUCKETS, summarizeYear, remainingIfApproved, yearSplitOf, findOverlap, formatDays, workFromWhereverHint, othersOff, portionsOf, requestPortions } from '../utils/timeOffMath'
 import { parseImportList } from '../utils/importList'
 import { escapeHtml } from '../utils/escapeHtml'
 import { sendTimeOffEmail, appLink } from '../utils/emailNotify'
@@ -129,7 +129,7 @@ function getWeekEventLayout(weekDates, allRequests) {
 const FLEX_LABELS = { firm: 'Firm', moderately_adjustable: 'Moderately adjustable', flexible: 'Flexible', other: 'Other' }
 const LEGACY_TYPES = new Set(['vacation', 'sick', 'personal'])
 const LOG_TYPE_OPTIONS = Object.entries(TYPE_LABELS).filter(([k]) => !LEGACY_TYPES.has(k))
-const EMPTY_LOG = { employeeId: '', start: '', end: '', portion: 'full', type: 'personal_vacation', notes: '', approve: true }
+const EMPTY_LOG = { employeeId: '', start: '', end: '', portion: 'full', startPortion: 'full', endPortion: 'full', type: 'personal_vacation', notes: '', approve: true }
 
 // Allowances count as "not set" when there's no row, or only the empty row an
 // approval creates on its own (no vacation and no care days).
@@ -347,7 +347,7 @@ export default function TimeOff({ session, userProfile, onNavigate }) {
   function decisionEmail(req, verb, notes, extra = '') {
     return `<p>Hi ${escapeHtml(req.employee.full_name)},</p>
 <p>Your time off request has been <strong>${verb}</strong>.</p>
-<p><strong>Dates:</strong> ${fmtDateRange(req.start_date, req.end_date)}<br/>
+<p><strong>Dates:</strong> ${fmtRequestDates(req)}<br/>
 <strong>Type:</strong> ${escapeHtml(TYPE_LABELS[req.type] || req.type)}<br/>
 <strong>Business days:</strong> ${formatDays(req.business_days)}${notes ? `<br/><strong>Note from HR:</strong> ${escapeHtml(notes)}` : ''}</p>
 ${extra}${appLink('/', 'See it in your portal')}`
@@ -512,13 +512,14 @@ ${extra}${appLink('/', 'See it in your portal')}`
   // ── Logging time off for someone ──
   async function submitLog() {
     const f = logForm
-    const half = f.portion !== 'full'
-    const end = half ? f.start : f.end
+    const p = requestPortions(f.start, f.end, f.portion, f.startPortion, f.endPortion)
+    const half = p.half
+    const end = p.end
     if (!f.employeeId) { showToast('Choose who the time off is for.', 'error'); return }
     if (!f.start || !end) { showToast('Choose the dates.', 'error'); return }
     if (end < f.start) { showToast('The last day must be on or after the first day.', 'error'); return }
-    const clash = findOverlap(requestsByEmployee[f.employeeId], f.start, end, { portion: f.portion })
-    if (clash) { showToast(`They already have a ${clash.status} request for ${fmtDateRange(clash.start_date, clash.end_date)}.`, 'error'); return }
+    const clash = findOverlap(requestsByEmployee[f.employeeId], f.start, end, { startPortion: p.startPortion, endPortion: p.endPortion })
+    if (clash) { showToast(`They already have a ${clash.status} request for ${fmtRequestDates(clash)}.`, 'error'); return }
 
     setLogSaving(true)
     const { data: created, error } = await supabase
@@ -528,6 +529,7 @@ ${extra}${appLink('/', 'See it in your portal')}`
         business_days: 0, // the database counts this on insert
         type: f.type, notes: f.notes.trim() || null, status: TIME_OFF_STATUS.PENDING,
         is_half_day: half, day_portion: f.portion,
+        ...(p.partialEnds ? { start_portion: p.startPortion, end_portion: p.endPortion } : {}),
       })
       .select('id, business_days')
       .single()
@@ -585,7 +587,7 @@ ${extra}${appLink('/', 'See it in your portal')}`
   function detailsLine(req) {
     const bits = []
     if (req.direct_manager_name) bits.push(['Direct manager', req.direct_manager_name])
-    const wfw = req.status === TIME_OFF_STATUS.PENDING && workFromWhereverHint(req.type, req.start_date, req.end_date, req.day_portion || 'full')
+    const wfw = req.status === TIME_OFF_STATUS.PENDING && workFromWhereverHint(req.type, req.start_date, req.end_date, portionsOf(req).start, portionsOf(req).end)
     if (wfw) bits.push(['Heads up', 'Not one full Monday to Friday week', true])
     if (req.flexibility) bits.push(['Flexibility', `${FLEX_LABELS[req.flexibility] || req.flexibility}${req.flexibility_note ? `: ${req.flexibility_note}` : ''}`])
     if (req.volunteering_with) bits.push(['Volunteering with', req.volunteering_with])
@@ -637,7 +639,7 @@ ${extra}${appLink('/', 'See it in your portal')}`
               <span style={{ fontSize: 'var(--text-sm)', color: T.muted }}>{TYPE_LABELS[req.type] || req.type}</span>
             </div>
             <div style={{ fontSize: 'var(--text-md)', color: T.text, marginTop: '4px' }}>
-              {fmtDateRange(req.start_date, req.end_date)}
+              {fmtRequestDates(req)}
               <span style={{ color: T.muted }}> · {formatDays(req.business_days).slice(0, -1)} day{Number(req.business_days) === 1 ? '' : 's'}{portion}</span>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 14px', fontSize: 'var(--text-sm)', color: T.muted, marginTop: '6px' }}>
@@ -683,7 +685,7 @@ ${extra}${appLink('/', 'See it in your portal')}`
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 500, color: T.text, fontSize: 'var(--text-base)' }}>{req.employee?.full_name || '?'}</div>
           <div style={{ fontSize: 'var(--text-sm)', color: T.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: isMobile ? 'normal' : 'nowrap' }}>
-            {[fmtDateRange(req.start_date, req.end_date), TYPE_LABELS[req.type] || req.type, formatDays(req.business_days), by].filter(Boolean).join(' · ')}
+            {[fmtRequestDates(req), TYPE_LABELS[req.type] || req.type, formatDays(req.business_days), by].filter(Boolean).join(' · ')}
             {req.review_notes && <span style={{ color: T.subtle }}> · “{req.review_notes}”</span>}
           </div>
           {isMobile && <div style={{ marginTop: '6px' }}><StatusPill status={req.status} /></div>}
@@ -740,6 +742,11 @@ ${extra}${appLink('/', 'See it in your portal')}`
   }
 
   const pendingCount = requests.filter(r => r.status === TIME_OFF_STATUS.PENDING).length
+  // The log form's choices as a request: a longer request can start in the
+  // afternoon and end after the morning.
+  const logPortions = logForm ? requestPortions(logForm.start, logForm.end, logForm.portion, logForm.startPortion, logForm.endPortion) : null
+  const logMultiDay = Boolean(logForm && !logPortions.half && logForm.start && logPortions.end && logPortions.end > logForm.start)
+  const logWfwHint = logForm ? workFromWhereverHint(logForm.type, logForm.start, logPortions.end, logPortions.startPortion, logPortions.endPortion) : null
   const skeletonCards = [1, 2, 3].map(i => (
     <div key={i} style={{ ...s.card, padding: '16px', marginBottom: '10px' }}><SkeletonLine width={`${40 + i * 10}%`} height="13px" /></div>
   ))
@@ -983,7 +990,7 @@ ${extra}${appLink('/', 'See it in your portal')}`
                             <div style={{ padding: isMobile ? '12px 16px' : '12px 16px 12px 56px', fontSize: 'var(--text-sm)', color: T.subtle }}>No requests in {balYear}.</div>
                           ) : row.requests.map(req => (
                             <div key={req.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: isMobile ? '10px 16px' : '10px 16px 10px 56px', borderBottom: `1px solid ${T.borderSubtle}`, fontSize: 'var(--text-sm)', color: T.muted }}>
-                              <span style={{ flex: 1, minWidth: 0 }}>{fmtDateRange(req.start_date, req.end_date)} · {TYPE_LABELS[req.type] || req.type} · {formatDays(req.business_days)}</span>
+                              <span style={{ flex: 1, minWidth: 0 }}>{fmtRequestDates(req)} · {TYPE_LABELS[req.type] || req.type} · {formatDays(req.business_days)}</span>
                               <StatusPill status={req.status} />
                             </div>
                           ))}
@@ -1095,7 +1102,7 @@ ${extra}${appLink('/', 'See it in your portal')}`
                             const colPct = 100 / 7
                             const lOff = startsThisWeek ? 3 : 0
                             const rOff = endsThisWeek ? 3 : 0
-                            const label = `${req.employee?.full_name || 'Someone'}: ${TYPE_LABELS[req.type] || req.type}${isPending ? ' (pending)' : ''}, ${fmtDateRange(req.start_date, req.end_date)}, ${req.business_days} days`
+                            const label = `${req.employee?.full_name || 'Someone'}: ${TYPE_LABELS[req.type] || req.type}${isPending ? ' (pending)' : ''}, ${fmtRequestDates(req)}, ${req.business_days} days`
                             return (
                               <div
                                 key={`${req.id}-${wi}`}
@@ -1288,7 +1295,7 @@ ${extra}${appLink('/', 'See it in your portal')}`
       {confirmCancel && (
         <ConfirmModal
           title={`Cancel ${confirmCancel.employee?.full_name?.split(' ')[0] || 'this'}'s time off?`}
-          message={`${fmtDateRange(confirmCancel.start_date, confirmCancel.end_date)}, ${TYPE_LABELS[confirmCancel.type] || confirmCancel.type}.${balanceBucket(confirmCancel.type) ? ` ${formatDays(confirmCancel.business_days)} go back into their ${BUCKETS[balanceBucket(confirmCancel.type)].short}.` : ''} They'll get an email.`}
+          message={`${fmtRequestDates(confirmCancel)}, ${TYPE_LABELS[confirmCancel.type] || confirmCancel.type}.${balanceBucket(confirmCancel.type) ? ` ${formatDays(confirmCancel.business_days)} go back into their ${BUCKETS[balanceBucket(confirmCancel.type)].short}.` : ''} They'll get an email.`}
           confirmLabel="Cancel time off"
           confirmDanger
           onConfirm={() => adminCancel(confirmCancel)}
@@ -1302,7 +1309,7 @@ ${extra}${appLink('/', 'See it in your portal')}`
         return (
           <Modal
             title={`Deny ${first}'s request?`}
-            description={`${fmtDateRange(denyReq.start_date, denyReq.end_date)}, ${TYPE_LABELS[denyReq.type] || denyReq.type}. A denied request can't be reopened; ${first} would need to send a new one.`}
+            description={`${fmtRequestDates(denyReq)}, ${TYPE_LABELS[denyReq.type] || denyReq.type}. A denied request can't be reopened; ${first} would need to send a new one.`}
             onClose={() => setDenyReq(null)}
             busy={busy}
             maxWidth={460}
@@ -1485,15 +1492,27 @@ ${extra}${appLink('/', 'See it in your portal')}`
                 <input type="date" min={logForm.start || undefined} value={logForm.end} onChange={e => setLogForm(f => ({ ...f, end: e.target.value }))} />
               </Field>
             )}
+            {logMultiDay && (
+              <>
+                <div style={{ margin: '-6px 0 18px' }}>
+                  <Segmented size="sm" label="Part of first day" value={logForm.startPortion} onChange={v => setLogForm(f => ({ ...f, startPortion: v }))}
+                    options={[{ value: 'full', label: 'Whole day' }, { value: 'pm', label: 'Afternoon only' }]} />
+                </div>
+                <div style={{ margin: '-6px 0 18px' }}>
+                  <Segmented size="sm" label="Part of last day" value={logForm.endPortion} onChange={v => setLogForm(f => ({ ...f, endPortion: v }))}
+                    options={[{ value: 'full', label: 'Whole day' }, { value: 'am', label: 'Morning only' }]} />
+                </div>
+              </>
+            )}
           </div>
           <Field label="Type" hint={balanceBucket(logForm.type) ? `Uses ${BUCKETS[balanceBucket(logForm.type)].short}.` : "Doesn't use a balance."}>
             <select value={logForm.type} onChange={e => setLogForm(f => ({ ...f, type: e.target.value }))}>
               {LOG_TYPE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
           </Field>
-          {workFromWhereverHint(logForm.type, logForm.start, logForm.portion === 'full' ? logForm.end : logForm.start, logForm.portion) && (
+          {logWfwHint && (
             <div className="il-field-hint" data-tone="warning" role="status" style={{ margin: '-8px 0 14px' }}>
-              {workFromWhereverHint(logForm.type, logForm.start, logForm.portion === 'full' ? logForm.end : logForm.start, logForm.portion)}
+              {logWfwHint}
             </div>
           )}
           <Field label="Note" optional>

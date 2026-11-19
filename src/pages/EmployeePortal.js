@@ -10,10 +10,10 @@ import { logAudit } from '../utils/auditLog'
 import { useWindowSize } from '../hooks/useWindowSize'
 import { SCHEDULE_BUCKETS, getCurrentYear, getToday, FEATURES, TIME_OFF_START_DATE, ONBOARDING_STATUS, TIME_OFF_STATUS, ROUTES, brandName } from '../config'
 import { normalizeTask, groupParentsByBucket, bucketDateHint, isBucketUpcoming } from '../utils/schedule'
-import { TYPE_LABELS, StatusPill, TypeIcon, fmtDateRange } from '../utils/timeOffShared'
+import { TYPE_LABELS, StatusPill, TypeIcon, fmtRequestDates } from '../utils/timeOffShared'
 import { escapeHtml, escapeHtmlMultiline } from '../utils/escapeHtml'
 import { notifyTimeOffHrAndManager, sendEmail, appLink } from '../utils/emailNotify'
-import { countsAgainstBalance, balanceBucket, BUCKETS, summarizeYear, remainingIfApproved, findOverlap, employeeCanCancel, relevantYears, splitTotal, formatDays, workFromWhereverHint } from '../utils/timeOffMath'
+import { countsAgainstBalance, balanceBucket, BUCKETS, summarizeYear, remainingIfApproved, findOverlap, employeeCanCancel, relevantYears, splitTotal, formatDays, workFromWhereverHint, portionsOf, requestPortions } from '../utils/timeOffMath'
 import { TICKET_CATEGORIES, TICKET_URGENCY, TicketStatusPill, categoryLabel, urgencyLabel } from '../utils/ticketShared'
 import { computeProgress, isParentComplete } from '../utils/taskProgress'
 import { attachResolvedUrls } from '../utils/documentUrls'
@@ -110,6 +110,10 @@ export default function EmployeePortal({ session, userProfile, onSwitchToAdmin }
   const [torCalculating, setTorCalculating] = useState(false)
   const [torSubmitting, setTorSubmitting] = useState(false)
   const [torDayPortion, setTorDayPortion] = useState('full')
+  // For a request over several days: the first day can start in the afternoon
+  // ('pm') and the last day can end after the morning ('am').
+  const [torStartPortion, setTorStartPortion] = useState('full')
+  const [torEndPortion, setTorEndPortion] = useState('full')
   const [torVolunteeringWith, setTorVolunteeringWith] = useState('')
   const [torFlexibility, setTorFlexibility] = useState('')
   const [torFlexibilityNote, setTorFlexibilityNote] = useState('')
@@ -236,13 +240,20 @@ export default function EmployeePortal({ session, userProfile, onSwitchToAdmin }
   // The database counts the business days (skipping weekends and company
   // holidays) and splits them by year, so the number shown here is the same
   // number HR approves.
-  async function recalcDays(start, end, portion) {
+  async function recalcDays(changes = {}) {
     const seq = ++calcSeq.current
-    const half = portion !== 'full'
-    const last = half ? start : end
-    if (!start || !last || last < start) { setTorSplit(null); setTorCalculating(false); return }
+    const { start, end, dayPortion, startPortion, endPortion } = {
+      start: torStartDate, end: torEndDate, dayPortion: torDayPortion,
+      startPortion: torStartPortion, endPortion: torEndPortion, ...changes,
+    }
+    const p = requestPortions(start, end, dayPortion, startPortion, endPortion)
+    if (!start || !p.end || p.end < start) { setTorSplit(null); setTorCalculating(false); return }
     setTorCalculating(true)
-    const { data, error } = await supabase.rpc('time_off_year_split', { p_start: start, p_end: last, p_half_day: half })
+    const args = { p_start: start, p_end: p.end, p_half_day: p.half }
+    // Sent only when a longer request has a partial end, so whole-day counts
+    // keep working against a database that hasn't been migrated yet.
+    if (p.partialEnds) Object.assign(args, { p_start_portion: p.startPortion, p_end_portion: p.endPortion })
+    const { data, error } = await supabase.rpc('time_off_year_split', args)
     if (seq !== calcSeq.current) return
     setTorCalculating(false)
     if (error) { setTorSplit(null); showToast(handleSupabaseError(error, 'Failed to count business days.'), 'error'); return }
@@ -252,18 +263,28 @@ export default function EmployeePortal({ session, userProfile, onSwitchToAdmin }
   function handleStartChange(value) {
     setTorStartDate(value)
     if (torDayPortion !== 'full') setTorEndDate(value)
-    recalcDays(value, torDayPortion !== 'full' ? value : torEndDate, torDayPortion)
+    recalcDays({ start: value, ...(torDayPortion !== 'full' ? { end: value } : {}) })
   }
 
   function handleEndChange(value) {
     setTorEndDate(value)
-    recalcDays(torStartDate, value, torDayPortion)
+    recalcDays({ end: value })
   }
 
   function handleDayPortionChange(portion) {
     setTorDayPortion(portion)
     if (portion !== 'full' && torStartDate) setTorEndDate(torStartDate)
-    recalcDays(torStartDate, portion !== 'full' ? torStartDate : torEndDate, portion)
+    recalcDays({ dayPortion: portion, ...(portion !== 'full' && torStartDate ? { end: torStartDate } : {}) })
+  }
+
+  function handleStartPortionChange(portion) {
+    setTorStartPortion(portion)
+    recalcDays({ startPortion: portion })
+  }
+
+  function handleEndPortionChange(portion) {
+    setTorEndPortion(portion)
+    recalcDays({ endPortion: portion })
   }
 
   function resetTimeOffForm() {
@@ -275,6 +296,8 @@ export default function EmployeePortal({ session, userProfile, onSwitchToAdmin }
     setTorSplit(null)
     setTorCalculating(false)
     setTorDayPortion('full')
+    setTorStartPortion('full')
+    setTorEndPortion('full')
     setTorVolunteeringWith('')
     setTorFlexibility('')
     setTorFlexibilityNote('')
@@ -287,8 +310,9 @@ export default function EmployeePortal({ session, userProfile, onSwitchToAdmin }
 
   async function submitTimeOffRequest({ confirmed = false } = {}) {
     if (torSubmitting) return
-    const isHalfDay = torDayPortion !== 'full'
-    const endDate = isHalfDay ? torStartDate : torEndDate
+    const p = requestPortions(torStartDate, torEndDate, torDayPortion, torStartPortion, torEndPortion)
+    const isHalfDay = p.half
+    const endDate = p.end
     if (!torStartDate || !endDate) { showToast('Please choose your dates.', 'error'); return }
     if (endDate < torStartDate) { showToast('End date must be on or after start date.', 'error'); return }
     if (torStartDate < TIME_OFF_START_DATE) { showToast('Please choose time off on or after January 1, 2027.', 'error'); return }
@@ -300,10 +324,10 @@ export default function EmployeePortal({ session, userProfile, onSwitchToAdmin }
     if (torType === 'volunteer' && !torVolunteeringWith.trim()) { showToast('Please say who you will be volunteering with.', 'error'); return }
     if (torSplit === null || torCalculating) { showToast('Still counting business days, please wait a moment.', 'error'); return }
     if (splitTotal(torSplit) === 0) { showToast('Those dates are all weekends or company holidays, so there is nothing to request.', 'error'); return }
-    const overlap = findOverlap(timeOffRequests, torStartDate, endDate, { portion: torDayPortion })
-    if (overlap) { showToast(`You already have a ${overlap.status} request for ${fmtDateRange(overlap.start_date, overlap.end_date)}. Cancel it first, or choose other dates.`, 'error'); return }
+    const overlap = findOverlap(timeOffRequests, torStartDate, endDate, { startPortion: p.startPortion, endPortion: p.endPortion })
+    if (overlap) { showToast(`You already have a ${overlap.status} request for ${fmtRequestDates(overlap)}. Cancel it first, or choose other dates.`, 'error'); return }
     // A guideline, not a rule: ask once, then send it if they want to.
-    if (!confirmed && workFromWhereverHint(torType, torStartDate, endDate, torDayPortion)) { setConfirmWfw(true); return }
+    if (!confirmed && workFromWhereverHint(torType, torStartDate, endDate, p.startPortion, p.endPortion)) { setConfirmWfw(true); return }
 
     const notesVal = torNotes.trim()
     const volunteeringWith = torType === 'volunteer' ? torVolunteeringWith.trim() : null
@@ -324,6 +348,8 @@ export default function EmployeePortal({ session, userProfile, onSwitchToAdmin }
         status: TIME_OFF_STATUS.PENDING,
         is_half_day: isHalfDay,
         day_portion: torDayPortion,
+        // Only sent when used, like the count above.
+        ...(p.partialEnds ? { start_portion: p.startPortion, end_portion: p.endPortion } : {}),
         volunteering_with: volunteeringWith,
         flexibility: torFlexibility,
         flexibility_note: flexibilityNote,
@@ -350,13 +376,13 @@ export default function EmployeePortal({ session, userProfile, onSwitchToAdmin }
     const balanceLine = !bucket
       ? "Doesn't use a balance"
       : after.map(a => a.hasBalance ? `${formatDays(a.remaining)} ${BUCKETS[bucket].short} left in ${a.year}` : `no ${a.year} allowance set up yet`).join(', ')
-    const wfwNote = workFromWhereverHint(newReq.type, newReq.start_date, newReq.end_date, newReq.day_portion)
+    const wfwNote = workFromWhereverHint(newReq.type, newReq.start_date, newReq.end_date, portionsOf(newReq).start, portionsOf(newReq).end)
     const dayPortionLabel = newReq.day_portion === 'am' ? ' (morning)' : newReq.day_portion === 'pm' ? ' (afternoon)' : ''
     const flexibilityLabel = FLEXIBILITY_OPTIONS.find(f => f.value === newReq.flexibility)?.label || newReq.flexibility
     const html = `
 <p><strong>${escapeHtml(employeeName)}</strong> has requested time off.</p>
 <p>
-  <strong>Dates:</strong> ${fmtDateRange(newReq.start_date, newReq.end_date)}<br/>
+  <strong>Dates:</strong> ${fmtRequestDates(newReq)}<br/>
   <strong>Type:</strong> ${escapeHtml(TYPE_LABELS[newReq.type] || newReq.type)}<br/>
   <strong>Direct manager:</strong> ${escapeHtml(newReq.direct_manager_name || '')}<br/>
   <strong>Business days:</strong> ${formatDays(newReq.business_days)}${dayPortionLabel}<br/>
@@ -384,7 +410,7 @@ ${appLink(ROUTES.TIME_OFF, 'Review it in Integrated Launch')}`
     const html = `
 <p><strong>${escapeHtml(employeeName)}</strong> has cancelled a time off request.</p>
 <p>
-  <strong>Dates:</strong> ${fmtDateRange(req.start_date, req.end_date)}<br/>
+  <strong>Dates:</strong> ${fmtRequestDates(req)}<br/>
   <strong>Type:</strong> ${escapeHtml(TYPE_LABELS[req.type] || req.type)}<br/>
   <strong>Business days:</strong> ${formatDays(req.business_days)}<br/>
   <strong>Was:</strong> ${escapeHtml(req.status)}
@@ -635,13 +661,15 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
   const shownBalance = balancesByYear[String(shownYear)]
   const summaries = ['vacation', 'care'].map(bucket => summarizeYear(shownBalance, timeOffRequests, shownYear, { bucket }))
   const hasShownBalance = Boolean(shownBalance)
-  const torWfwHint = workFromWhereverHint(torType, torStartDate, torDayPortion !== 'full' ? torStartDate : torEndDate, torDayPortion)
-  const torIsHalf = torDayPortion !== 'full'
-  const torEnd = torIsHalf ? torStartDate : torEndDate
+  const torPortions = requestPortions(torStartDate, torEndDate, torDayPortion, torStartPortion, torEndPortion)
+  const torIsHalf = torPortions.half
+  const torEnd = torPortions.end
+  const torMultiDay = !torIsHalf && torStartDate && torEnd && torEnd > torStartDate
+  const torWfwHint = workFromWhereverHint(torType, torStartDate, torEnd, torPortions.startPortion, torPortions.endPortion)
   const torDays = torSplit ? splitTotal(torSplit) : null
   const torSplitYears = torSplit ? Object.entries(torSplit).filter(([, d]) => Number(d) > 0) : []
   const torAfter = torSplit ? remainingIfApproved({ id: '__draft', type: torType, year_split: torSplit }, balancesByYear, timeOffRequests) : []
-  const torOverlap = findOverlap(timeOffRequests, torStartDate, torEnd, { portion: torDayPortion })
+  const torOverlap = findOverlap(timeOffRequests, torStartDate, torEnd, { startPortion: torPortions.startPortion, endPortion: torPortions.endPortion })
   const torDatesBackwards = torStartDate && torEnd && torEnd < torStartDate
   const submitBlocker =
     !torStartDate || !torEnd ? 'Choose your dates to continue.'
@@ -949,11 +977,25 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
                     <div style={{ minWidth: 0 }}>
                       <label htmlFor="il-tor-start" style={styles.fieldLabel}>{torIsHalf ? 'Date' : 'First day off'}</label>
                       <input id="il-tor-start" type="date" min={TIME_OFF_START_DATE} style={styles.fieldInput} value={torStartDate} onChange={e => handleStartChange(e.target.value)} />
+                      {/* Over several days, the first day can start at noon and
+                          the last day can end at noon. */}
+                      {torMultiDay && (
+                        <div style={{ marginTop: '8px' }}>
+                          <Segmented size="sm" label="Part of first day off" value={torStartPortion} onChange={handleStartPortionChange}
+                            options={[{ value: 'full', label: 'Whole day' }, { value: 'pm', label: 'Afternoon only' }]} />
+                        </div>
+                      )}
                     </div>
                     {!torIsHalf && (
                       <div style={{ minWidth: 0 }}>
                         <label htmlFor="il-tor-end" style={styles.fieldLabel}>Last day off</label>
                         <input id="il-tor-end" type="date" style={styles.fieldInput} value={torEndDate} min={torStartDate && torStartDate > TIME_OFF_START_DATE ? torStartDate : TIME_OFF_START_DATE} onChange={e => handleEndChange(e.target.value)} />
+                        {torMultiDay && (
+                          <div style={{ marginTop: '8px' }}>
+                            <Segmented size="sm" label="Part of last day off" value={torEndPortion} onChange={handleEndPortionChange}
+                              options={[{ value: 'full', label: 'Whole day' }, { value: 'am', label: 'Morning only' }]} />
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1046,7 +1088,7 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
                   )}
                   {torOverlap && (
                     <div className="il-field-hint" data-tone="error" role="alert" style={{ marginBottom: '12px' }}>
-                      You already have a {torOverlap.status} request for {fmtDateRange(torOverlap.start_date, torOverlap.end_date)}. Cancel it first, or choose other dates.
+                      You already have a {torOverlap.status} request for {fmtRequestDates(torOverlap)}. Cancel it first, or choose other dates.
                     </div>
                   )}
 
@@ -1072,7 +1114,7 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
                             <div style={{ flex: 1, minWidth: '160px' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <TypeIcon type={req.type} size={12} />
-                                <span style={{ fontSize: 'var(--text-base)', fontWeight: 500, color: 'var(--text)' }}>{fmtDateRange(req.start_date, req.end_date)}</span>
+                                <span style={{ fontSize: 'var(--text-base)', fontWeight: 500, color: 'var(--text)' }}>{fmtRequestDates(req)}</span>
                               </div>
                               <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)', marginTop: '2px' }}>
                                 {TYPE_LABELS[req.type] || req.type} · {formatDays(req.business_days)}
@@ -1092,7 +1134,7 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
                             <StatusPill status={req.status} />
                             {canCancel && (
                               <button style={styles.cancelBtn} disabled={cancellingId === req.id}
-                                aria-label={`Cancel request for ${fmtDateRange(req.start_date, req.end_date)}`}
+                                aria-label={`Cancel request for ${fmtRequestDates(req)}`}
                                 onClick={() => req.status === TIME_OFF_STATUS.APPROVED ? setConfirmCancelReq(req) : cancelTimeOffRequest(req)}>
                                 {cancellingId === req.id ? '...' : 'Cancel'}
                               </button>
@@ -1191,7 +1233,7 @@ ${appLink(ROUTES.TECH_SUPPORT, 'Open the ticket queue')}`
       {confirmCancelReq && (
         <ConfirmModal
           title="Cancel approved time off?"
-          message={`Your ${fmtDateRange(confirmCancelReq.start_date, confirmCancelReq.end_date)} time off will be cancelled${countsAgainstBalance(confirmCancelReq.type) ? ` and ${formatDays(confirmCancelReq.business_days)} go back into your ${BUCKETS[balanceBucket(confirmCancelReq.type)].short}` : ''}. HR will be told. To take it after all, you'd send a new request.`}
+          message={`Your ${fmtRequestDates(confirmCancelReq)} time off will be cancelled${countsAgainstBalance(confirmCancelReq.type) ? ` and ${formatDays(confirmCancelReq.business_days)} go back into your ${BUCKETS[balanceBucket(confirmCancelReq.type)].short}` : ''}. HR will be told. To take it after all, you'd send a new request.`}
           confirmLabel="Yes, cancel it"
           confirmDanger
           onConfirm={async () => {
