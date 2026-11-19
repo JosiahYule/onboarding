@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest'
 import {
   countsAgainstBalance, balanceBucket, yearSplitOf, summarizeYear, remainingIfApproved,
   findOverlap, employeeCanCancel, relevantYears, formatDays, workFromWhereverHint, othersOff,
+  portionsOf, requestPortions,
 } from './timeOffMath'
+import { fmtRequestDates } from './timeOffShared'
 
 const vac = (o) => ({ id: o.id || 'r', type: 'personal_vacation', status: 'pending', ...o })
 
@@ -108,6 +110,61 @@ describe('findOverlap', () => {
   it('ignores cancelled requests and non-overlaps', () => {
     expect(findOverlap(reqs, '2026-11-10', '2026-11-10')).toBeNull()
     expect(findOverlap(reqs, '2026-12-25', '2026-12-28')).toBeNull()
+  })
+})
+
+describe('partial first and last days', () => {
+  // Jan 2027: Thu 7, Fri 8, Mon 11, Tue 12.
+  const thuPmToFri = { id: 'a', status: 'pending', start_date: '2027-01-07', end_date: '2027-01-08', day_portion: 'full', start_portion: 'pm', end_portion: 'full' }
+
+  it('portionsOf reads the new columns, and falls back to day_portion for older rows', () => {
+    expect(portionsOf(thuPmToFri)).toEqual({ start: 'pm', end: 'full' })
+    expect(portionsOf({ start_date: '2027-01-07', end_date: '2027-01-07', day_portion: 'am' })).toEqual({ start: 'am', end: 'am' })
+    expect(portionsOf({ start_date: '2027-01-07', end_date: '2027-01-08' })).toEqual({ start: 'full', end: 'full' })
+  })
+
+  it('requestPortions turns form choices into a request', () => {
+    expect(requestPortions('2027-01-07', '2027-01-08', 'full', 'pm', 'full'))
+      .toEqual({ half: false, end: '2027-01-08', startPortion: 'pm', endPortion: 'full', partialEnds: true })
+    // A half day ignores the end date and the first/last-day choices.
+    expect(requestPortions('2027-01-07', '2027-01-20', 'am', 'pm', 'am'))
+      .toEqual({ half: true, end: '2027-01-07', startPortion: 'am', endPortion: 'am', partialEnds: false })
+    // Same first and last day: the first/last-day choices don't apply.
+    expect(requestPortions('2027-01-07', '2027-01-07', 'full', 'pm', 'am'))
+      .toEqual({ half: false, end: '2027-01-07', startPortion: 'full', endPortion: 'full', partialEnds: false })
+    // Only afternoon-first and morning-last make sense; anything else is a whole day.
+    expect(requestPortions('2027-01-07', '2027-01-08', 'full', 'am', 'pm').partialEnds).toBe(false)
+  })
+
+  it('a request ending in the morning and one starting that afternoon do not clash', () => {
+    const endsTueAm = [{ id: 'b', status: 'approved', start_date: '2027-01-11', end_date: '2027-01-12', start_portion: 'full', end_portion: 'am' }]
+    expect(findOverlap(endsTueAm, '2027-01-12', '2027-01-15', { startPortion: 'pm' })).toBeNull()
+    expect(findOverlap(endsTueAm, '2027-01-12', '2027-01-15')?.id).toBe('b')
+    // A single afternoon on that Tuesday fits too; a morning doesn't.
+    expect(findOverlap(endsTueAm, '2027-01-12', '2027-01-12', { portion: 'pm' })).toBeNull()
+    expect(findOverlap(endsTueAm, '2027-01-12', '2027-01-12', { portion: 'am' })?.id).toBe('b')
+  })
+
+  it('a morning before a request that starts in the afternoon fits; the same half clashes', () => {
+    expect(findOverlap([thuPmToFri], '2027-01-07', '2027-01-07', { portion: 'am' })).toBeNull()
+    expect(findOverlap([thuPmToFri], '2027-01-07', '2027-01-07', { portion: 'pm' })?.id).toBe('a')
+    expect(findOverlap([thuPmToFri], '2027-01-05', '2027-01-07', { endPortion: 'am' })).toBeNull()
+  })
+
+  it('days in the middle of both requests always clash', () => {
+    expect(findOverlap([thuPmToFri], '2027-01-06', '2027-01-11', { startPortion: 'pm', endPortion: 'am' })?.id).toBe('a')
+  })
+
+  it('Work from Wherever with a partial first or last day gets the hint', () => {
+    expect(workFromWhereverHint('work_from_wherever', '2027-01-11', '2027-01-15', 'full', 'am')).toMatch(/Monday to Friday/)
+    expect(workFromWhereverHint('work_from_wherever', '2027-01-11', '2027-01-15', 'pm', 'full')).toMatch(/Monday to Friday/)
+    expect(workFromWhereverHint('work_from_wherever', '2027-01-11', '2027-01-15', 'full', 'full')).toBeNull()
+  })
+
+  it('date labels name a partial first or last day', () => {
+    expect(fmtRequestDates(thuPmToFri)).toBe('Jan 7 (afternoon) – Jan 8')
+    expect(fmtRequestDates({ ...thuPmToFri, start_portion: 'full', end_portion: 'am' })).toBe('Jan 7 – Jan 8 (morning)')
+    expect(fmtRequestDates({ start_date: '2027-01-07', end_date: '2027-01-07', day_portion: 'am' })).toBe('Jan 7')
   })
 })
 

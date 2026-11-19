@@ -1,4 +1,5 @@
 import { formatDate } from './dates'
+import { portionsOf } from './timeOffMath'
 
 export const TYPE_LABELS = {
   personal_vacation: 'Personal / Vacation',
@@ -74,4 +75,16 @@ export function fmtDateRange(start, end) {
   const s = fmtDate(start)
   const e = fmtDate(end)
   return s === e ? s : `${s} – ${e}`
+}
+
+// A request's dates, with a partial first or last day named:
+// "Jan 7 (afternoon) – Jan 8", "Jan 11 – Jan 15 (morning)". A single half
+// day reads as just its date; the screens add "(morning)" next to the count.
+export function fmtRequestDates(req) {
+  if (!req) return ''
+  if (req.start_date === req.end_date) return fmtDate(req.start_date)
+  const { start, end } = portionsOf(req)
+  const s = fmtDate(req.start_date) + (start === 'pm' ? ' (afternoon)' : '')
+  const e = fmtDate(req.end_date) + (end === 'am' ? ' (morning)' : '')
+  return `${s} – ${e}`
 }

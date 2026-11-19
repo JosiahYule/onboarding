@@ -46,6 +46,28 @@ describe('peopleOffInWeek', () => {
   })
 })
 
+describe('peopleOffInWeek with a partial first or last day', () => {
+  const mon = '2027-01-11', fri = '2027-01-15'
+  it('labels the partial edge and never calls it a whole week', () => {
+    const [row] = peopleOffInWeek([
+      req({ employee: emp('Ana Lee'), start_date: '2027-01-11', end_date: '2027-01-15', start_portion: 'full', end_portion: 'am' }),
+    ], mon, fri)
+    expect(row.wholeWeek).toBe(false)
+    expect(describeDays(row)).toBe('Mon, Jan 11 to Fri, Jan 15 (morning)')
+  })
+  it('only names the edge in the week that holds it', () => {
+    const r = req({ employee: emp('Ana Lee'), start_date: '2027-01-14', end_date: '2027-01-19', start_portion: 'pm', end_portion: 'full' })
+    expect(describeDays(peopleOffInWeek([r], mon, fri)[0])).toBe('Thu, Jan 14 (afternoon) to Fri, Jan 15')
+    const next = peopleOffInWeek([r], '2027-01-18', '2027-01-22')[0]
+    expect(describeDays(next)).toBe('Mon, Jan 18 to Tue, Jan 19')
+  })
+  it('a stretch clipped to one partial day reads as that half', () => {
+    const r = req({ employee: emp('Ana Lee'), start_date: '2027-01-15', end_date: '2027-01-19', start_portion: 'pm', end_portion: 'am' })
+    expect(describeDays(peopleOffInWeek([r], mon, fri)[0])).toBe('Fri, Jan 15 (afternoon)')
+    expect(describeDays(peopleOffInWeek([r], '2027-01-18', '2027-01-22')[0])).toBe('Mon, Jan 18 to Tue, Jan 19 (morning)')
+  })
+})
+
 describe('describeDays', () => {
   it('reads naturally', () => {
     expect(describeDays({ wholeWeek: true })).toBe('All week')

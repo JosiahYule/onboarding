@@ -10,6 +10,7 @@
 import { TIME_OFF_STATUS, branchName } from '../config'
 import { formatDate, parseLocalDate, toLocalISODate } from './dates'
 import { escapeHtml } from './escapeHtml'
+import { portionsOf } from './timeOffMath'
 
 function iso(d) { return toLocalISODate(d) }
 
@@ -49,8 +50,19 @@ export function mondayOf(isoDate) {
   return iso(d)
 }
 
+// The part of `day` a request takes: 'full', 'am' or 'pm'. Only its first and
+// last day can be partial.
+function partOf(r, day) {
+  const p = portionsOf(r)
+  if (day === r.start_date) return p.start
+  if (day === r.end_date) return p.end
+  return 'full'
+}
+
 // Who is off between monday and friday. Returns one line per request, sorted
-// by name: { name, email, branch, from, to, wholeWeek, portion, remote, status }.
+// by name: { name, email, branch, from, to, wholeWeek, portion, fromPortion,
+// toPortion, remote, status }. `portion` is set for a single partial day;
+// `fromPortion`/`toPortion` name a partial first or last day of a longer stretch.
 // Only approved time off counts, unless includePending is set.
 export function peopleOffInWeek(requests, monday, friday, { includePending = false } = {}) {
   const wanted = r => r.status === TIME_OFF_STATUS.APPROVED || (includePending && r.status === TIME_OFF_STATUS.PENDING)
@@ -63,14 +75,18 @@ export function peopleOffInWeek(requests, monday, friday, { includePending = fal
       while (from <= to && !isWeekday(from)) from = addDays(from, 1)
       while (to >= from && !isWeekday(to)) to = addDays(to, -1)
       if (from > to) return null
+      const fromPortion = partOf(r, from)
+      const toPortion = partOf(r, to)
       return {
         id: r.id,
         name: r.employee?.full_name || 'Someone',
         email: r.employee?.email || '',
         branch: r.employee?.branch || null,
         from, to,
-        wholeWeek: from === monday && to === friday,
-        portion: r.day_portion && r.day_portion !== 'full' ? r.day_portion : null,
+        wholeWeek: from === monday && to === friday && fromPortion === 'full' && toPortion === 'full',
+        portion: from === to && fromPortion !== 'full' ? fromPortion : null,
+        fromPortion: from !== to && fromPortion !== 'full' ? fromPortion : null,
+        toPortion: from !== to && toPortion !== 'full' ? toPortion : null,
         remote: r.type === 'work_from_wherever',
         status: r.status,
       }
@@ -81,12 +97,15 @@ export function peopleOffInWeek(requests, monday, friday, { includePending = fal
 
 const SHORT = { weekday: 'short', month: 'short', day: 'numeric' }
 
-// "All week", "Mon, Nov 16", "Fri, Nov 20 (afternoon)", "Mon, Nov 16 to Wed, Nov 18".
+const PART = { am: ' (morning)', pm: ' (afternoon)' }
+
+// "All week", "Mon, Nov 16", "Fri, Nov 20 (afternoon)", "Mon, Nov 16 to Wed, Nov 18",
+// "Thu, Nov 19 (afternoon) to Fri, Nov 20".
 export function describeDays(entry) {
   let when
   if (entry.wholeWeek) when = 'All week'
-  else if (entry.from === entry.to) when = formatDate(entry.from, SHORT) + (entry.portion === 'am' ? ' (morning)' : entry.portion === 'pm' ? ' (afternoon)' : '')
-  else when = `${formatDate(entry.from, SHORT)} to ${formatDate(entry.to, SHORT)}`
+  else if (entry.from === entry.to) when = formatDate(entry.from, SHORT) + (PART[entry.portion] || '')
+  else when = `${formatDate(entry.from, SHORT)}${PART[entry.fromPortion] || ''} to ${formatDate(entry.to, SHORT)}${PART[entry.toPortion] || ''}`
   return entry.remote ? `${when}, working remotely` : when
 }
 

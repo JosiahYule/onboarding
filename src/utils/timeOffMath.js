@@ -94,10 +94,12 @@ export function remainingIfApproved(req, balancesByYear, otherRequests) {
 // Work from Wherever is meant to be taken as one whole Monday-to-Friday week,
 // not split into pieces. It's a guideline, not a rule: the request can still
 // be sent, so this only returns a hint to show. Dates are YYYY-MM-DD.
-export function workFromWhereverHint(type, start, end, portion = 'full') {
+// `portion` is the first day's part ('full', 'am' or 'pm'); `endPortion` the
+// last day's, which defaults to the same.
+export function workFromWhereverHint(type, start, end, portion = 'full', endPortion = portion) {
   if (type !== 'work_from_wherever' || !start || !end || end < start) return null
   const msg = 'Work from Wherever is usually taken as one full week, Monday to Friday, rather than split into parts. You can still send this; HR will review it.'
-  if (portion !== 'full') return msg
+  if (portion !== 'full' || endPortion !== 'full') return msg
   const startDow = dayOfWeek(start)
   const endDow = dayOfWeek(end)
   const span = daysBetween(start, end)
@@ -130,22 +132,76 @@ export function othersOff(req, requests) {
   }
 }
 
-// An employee's own pending or approved request that overlaps these dates.
-// A morning and an afternoon on the same day don't clash, so someone can take
-// a half-day Care Day and a half-day of vacation together. `portion` is the
-// new request's day_portion: 'full', 'am' or 'pm'.
-export function findOverlap(requests, start, end, { excludeId, portion = 'full' } = {}) {
-  if (!start || !end) return null
-  return (requests || []).find(r =>
-    r.id !== excludeId &&
-    (r.status === TIME_OFF_STATUS.PENDING || r.status === TIME_OFF_STATUS.APPROVED) &&
-    r.start_date <= end && r.end_date >= start &&
-    !halvesOfTheSameDay(r.day_portion, portion)
-  ) || null
+// Which part of its first and last day a request takes: { start, end }, each
+// 'full', 'am' or 'pm'. A longer request can start in the afternoon
+// (start 'pm') and end after the morning (end 'am'); a single day has the same
+// value at both ends. Rows saved before start_portion/end_portion existed
+// fall back to day_portion, which only ever described a single day.
+export function portionsOf(req) {
+  const single = req?.day_portion && req.day_portion !== 'full' ? req.day_portion : 'full'
+  const pick = v => (v === 'am' || v === 'pm' ? v : null)
+  return {
+    start: pick(req?.start_portion) || single,
+    end: pick(req?.end_portion) || single,
+  }
 }
 
-function halvesOfTheSameDay(a, b) {
-  return (a === 'am' && b === 'pm') || (a === 'pm' && b === 'am')
+// What a time-off form's choices add up to. `dayPortion` is the Duration
+// choice: 'full' for one or more whole days, 'am' or 'pm' for part of a single
+// day. `startPortion` ('full' or 'pm') and `endPortion` ('full' or 'am') only
+// apply when the request runs over several days. Returns
+//   { half, end, startPortion, endPortion, partialEnds }
+// where `end` is the real last day (the start date for a half day) and
+// `partialEnds` is true for a longer request with a partial first or last day.
+export function requestPortions(start, end, dayPortion = 'full', startPortion = 'full', endPortion = 'full') {
+  const half = dayPortion !== 'full'
+  const last = half ? start : end
+  const multi = !half && Boolean(start) && Boolean(last) && last > start
+  const sp = half ? dayPortion : multi && startPortion === 'pm' ? 'pm' : 'full'
+  const ep = half ? dayPortion : multi && endPortion === 'am' ? 'am' : 'full'
+  return { half, end: last, startPortion: sp, endPortion: ep, partialEnds: multi && (sp !== 'full' || ep !== 'full') }
+}
+
+// The halves of `day` a request covers: ['am', 'pm'], ['am'] or ['pm'].
+function halvesOn(start, end, portions, day) {
+  const both = ['am', 'pm']
+  if (start === end) return portions.start === 'full' ? both : [portions.start]
+  if (day === start && portions.start !== 'full') return [portions.start]
+  if (day === end && portions.end !== 'full') return [portions.end]
+  return both
+}
+
+function nextDay(iso) {
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10)
+}
+
+// An employee's own pending or approved request that overlaps these dates.
+// Two requests only clash when they both take the same half of some day, so
+// a morning and an afternoon on the same day don't clash (a half-day Care Day
+// and a half-day of vacation together), and neither does a request ending on
+// Tuesday morning and another starting Tuesday afternoon.
+//   portion:      the new request's single-day portion ('full', 'am', 'pm')
+//   startPortion: its first day's part, for a longer request (default: portion)
+//   endPortion:   its last day's part (default: portion)
+export function findOverlap(requests, start, end, { excludeId, portion = 'full', startPortion = portion, endPortion = portion } = {}) {
+  if (!start || !end) return null
+  const mine = { start: startPortion, end: endPortion }
+  return (requests || []).find(r => {
+    if (r.id === excludeId) return false
+    if (r.status !== TIME_OFF_STATUS.PENDING && r.status !== TIME_OFF_STATUS.APPROVED) return false
+    const from = r.start_date > start ? r.start_date : start
+    const to = r.end_date < end ? r.end_date : end
+    if (from > to) return false
+    const theirs = portionsOf(r)
+    // Only the shared days at the edges can be partial; walk at most those.
+    for (let day = from, n = 0; day <= to && n < 3; day = nextDay(day), n++) {
+      const a = halvesOn(start, end, mine, day)
+      const b = halvesOn(r.start_date, r.end_date, theirs, day)
+      if (a.some(h => b.includes(h))) return true
+    }
+    return false
+  }) || null
 }
 
 // Employees may cancel a pending request any time, and approved leave only
